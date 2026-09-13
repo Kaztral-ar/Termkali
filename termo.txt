@@ -1,0 +1,8 @@
+# Optional: XFCE4 graphical desktop for Kali
+#
+# Run this INSIDE the Kali environment (after ./start-kali.sh), NOT in
+# Termux itself. It relies on `apt`, which only exists once you're inside
+# the Kali proot — Termux uses `pkg`, not `apt`, and does not have this
+# script's dependencies available.
+
+wget https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/DesktopEnvironment/Apt/Xfce4/de-apt-xfce4.sh && bash de-apt-xfce4.sh
