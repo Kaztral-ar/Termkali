@@ -112,8 +112,6 @@ download_with_animation() {
     return "$status"
 }
 
-# Always redraw exactly one compact terminal line. The bar is deliberately short
-# so it cannot wrap on small Termux screens.
 render_progress_bar() {
     local value="$1"
     local label="$2"
@@ -132,8 +130,6 @@ render_progress_bar() {
     [ "$filled" -gt 0 ] && filled_bar=$(printf '█%.0s' $(seq 1 "$filled"))
     [ "$empty" -gt 0 ] && empty_bar=$(printf '░%.0s' $(seq 1 "$empty"))
 
-    # ESC 2K clears the entire current line before carriage return.
-    # The short layout prevents terminal line wrapping from creating extra lines.
     printf "\033[2K\r${CYAN}[${GREEN}%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET} ${PURPLE}%s${RESET}" \
         "$filled_bar" "$empty_bar" "$value" "$label"
 }
@@ -283,19 +279,18 @@ cleanup() {
     echo -e "${GREEN}[✓] Cleanup completed${RESET}"
 }
 
-# Desktop download/setup uses a clean Termo-Kali progress display.
-# Upstream installer output remains hidden so raw apt/wget text is not shown.
+# Marching Blocks desktop loading effect. Raw upstream apt/wget output is hidden.
 run_desktop_installer_with_progress() {
     local installer="$1"
     local log_file
     local installer_pid
     local status
-    local value=0
-    local width=18
-    local filled
-    local empty
-    local filled_bar
-    local empty_bar
+    local width=12
+    local position=0
+    local direction=1
+    local block_width=2
+    local frame
+    local label="Preparing XFCE"
 
     log_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-desktop.XXXXXX")"
     if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
@@ -311,28 +306,53 @@ run_desktop_installer_with_progress() {
     installer_pid=$!
 
     printf "\n${WHITE}  Loading desktop environment${RESET}\n"
+
     while kill -0 "$installer_pid" 2>/dev/null; do
-        value=$(( (value + 3) % 101 ))
-        filled=$(( value * width / 100 ))
-        empty=$(( width - filled ))
-        filled_bar=""
-        empty_bar=""
-        [ "$filled" -gt 0 ] && filled_bar=$(printf '█%.0s' $(seq 1 "$filled"))
-        [ "$empty" -gt 0 ] && empty_bar=$(printf '░%.0s' $(seq 1 "$empty"))
-        printf "\033[2K\r${CYAN}[${GREEN}%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET} ${PURPLE}Loading${RESET}" \
-            "$filled_bar" "$empty_bar" "$value"
-        sleep 0.25
+        local recent_output
+        recent_output=$(tail -c 16384 "$log_file" 2>/dev/null | tr '\r' '\n')
+
+        if printf '%s' "$recent_output" | grep -qiE 'apt|install.*xfce|xfce4|xfce'; then
+            label="Installing XFCE"
+        fi
+        if printf '%s' "$recent_output" | grep -qiE 'configur|setting up|desktop'; then
+            label="Configuring desktop"
+        fi
+        if printf '%s' "$recent_output" | grep -qiE 'vnc|tightvnc|tigervnc'; then
+            label="Setting up VNC"
+        fi
+
+        frame=""
+        for ((i=0; i<width; i++)); do
+            if [ "$i" -eq "$position" ] || [ "$i" -eq $((position + 1)) ]; then
+                frame+="▰"
+            else
+                frame+="▱"
+            fi
+        done
+
+        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET}\n" "$frame"
+        printf "\033[2K\r  ${WHITE}%s${RESET}" "$label"
+
+        position=$((position + direction))
+        if [ "$position" -ge $((width - block_width)) ]; then
+            position=$((width - block_width))
+            direction=-1
+        elif [ "$position" -le 0 ]; then
+            position=0
+            direction=1
+        fi
+        sleep 0.12
     done
 
     wait "$installer_pid"
     status=$?
 
+    printf "\033[2K\r"
     if [ "$status" -eq 0 ]; then
-        filled_bar=$(printf '█%.0s' $(seq 1 "$width"))
-        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET} ${WHITE}100%%${RESET} ${GREEN}Complete${RESET}\n" "$filled_bar"
+        printf "${CYAN}[${GREEN}▱▱▰▰▱▱▱▱▱▱▱▱${CYAN}]${RESET}\n"
+        echo -e "  ${GREEN}Complete${RESET}"
         echo -e "${GREEN}[✓] Kali XFCE desktop environment setup completed${RESET}"
     else
-        printf "\033[2K\r"
         echo -e "${RED}[✗] Kali XFCE desktop environment setup failed${RESET}"
         echo -e "${YELLOW}Last installer output:${RESET}"
         tail -n 20 "$log_file"
@@ -353,124 +373,81 @@ launch_desktop_environment() {
     if [ -f "$desktop_script" ]; then
         chmod +x "$desktop_script"
     else
-        # Do not expose wget's 'Downloading' output. Show only a clean loading bar.
-        local download_pid
-        local download_status
-        local value=0
-        local width=18
-        local filled
-        local empty
-        local filled_bar
-        local empty_bar
-
-        wget "$desktop_url" -O "$desktop_script" -q &
-        download_pid=$!
-        printf "${WHITE}  Loading desktop environment${RESET}\n"
-        while kill -0 "$download_pid" 2>/dev/null; do
-            value=$(( (value + 5) % 101 ))
-            filled=$(( value * width / 100 ))
-            empty=$(( width - filled ))
-            filled_bar=""
-            empty_bar=""
-            [ "$filled" -gt 0 ] && filled_bar=$(printf '█%.0s' $(seq 1 "$filled"))
-            [ "$empty" -gt 0 ] && empty_bar=$(printf '░%.0s' $(seq 1 "$empty"))
-            printf "\033[2K\r${CYAN}[${GREEN}%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET} ${PURPLE}Loading${RESET}" \
-                "$filled_bar" "$empty_bar" "$value"
-            sleep 0.2
-        done
-        wait "$download_pid"
-        download_status=$?
-        if [ "$download_status" -ne 0 ] || [ ! -s "$desktop_script" ]; then
-            printf "\033[2K\r"
-            rm -f "$desktop_script"
+        echo -e "${CYAN}[•] Downloading Kali XFCE installer...${RESET}"
+        if ! download_with_animation "$desktop_url" "$desktop_script"; then
             echo -e "${RED}[✗] Kali XFCE installer download failed${RESET}"
-            read -r -p "Press Enter to return..."
-            return
+            return 1
         fi
         chmod +x "$desktop_script"
-        filled_bar=$(printf '█%.0s' $(seq 1 "$width"))
-        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET} ${WHITE}100%%${RESET} ${GREEN}Loaded${RESET}\n" "$filled_bar"
     fi
 
     run_desktop_installer_with_progress "$desktop_script"
-    local desktop_status=$?
-    rm -f "$desktop_script" &> /dev/null
-
-    if [ "$desktop_status" -ne 0 ]; then
-        echo -e "${RED}[✗] Desktop environment setup failed${RESET}"
-    fi
-    read -r -p "Press Enter to return..."
+    local status=$?
+    rm -f "$desktop_script" 2>/dev/null
+    return "$status"
 }
 
 update_termokali() {
-    local script_path="${BASH_SOURCE[0]}"
-    local script_dir
-    local current_script
-    local temp_file
-    script_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd)"
-    current_script="${script_dir}/$(basename "$script_path")"
-    temp_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-update.XXXXXX")"
-    if [ -z "$temp_file" ] || [ ! -f "$temp_file" ]; then
-        echo -e "${RED}[✗] Could not create update file${RESET}"
-        read -r -p "Press Enter to return..."
-        return
+    local current_script="${BASH_SOURCE[0]}"
+    local temp_script
+
+    if [ ! -f "$current_script" ]; then
+        echo -e "${RED}[✗] Current Termo-Kali script could not be located.${RESET}"
+        return 1
     fi
-    echo -e "${CYAN}[*] Checking Termo-Kali repository for updates...${RESET}"
-    if ! wget -q "$TERMO_KALI_UPDATE_URL" -O "$temp_file"; then
-        rm -f "$temp_file"
-        echo -e "${RED}[✗] Could not check for updates. Check your internet connection.${RESET}"
-        read -r -p "Press Enter to return..."
-        return
+
+    temp_script="$(mktemp "${TMPDIR:-/tmp}/termo-kali-update.XXXXXX")"
+    if ! wget -q "$TERMO_KALI_UPDATE_URL" -O "$temp_script"; then
+        rm -f "$temp_script"
+        echo -e "${RED}[✗] Failed to check for Termo-Kali updates.${RESET}"
+        return 1
     fi
-    if [ ! -s "$temp_file" ]; then
-        rm -f "$temp_file"
-        echo -e "${RED}[✗] Update file is empty or invalid${RESET}"
-        read -r -p "Press Enter to return..."
-        return
+
+    if [ ! -s "$temp_script" ]; then
+        rm -f "$temp_script"
+        echo -e "${RED}[✗] Update file is empty.${RESET}"
+        return 1
     fi
-    if cmp -s "$current_script" "$temp_file"; then
-        rm -f "$temp_file"
-        echo -e "${GREEN}[✓] Termo-Kali is already up to date${RESET}"
-        read -r -p "Press Enter to return..."
-        return
+
+    if cmp -s "$current_script" "$temp_script"; then
+        rm -f "$temp_script"
+        echo -e "${GREEN}[✓] Termo-Kali is already up to date.${RESET}"
+        return 0
     fi
-    chmod +x "$temp_file"
-    if mv "$temp_file" "$current_script"; then
-        echo -e "${GREEN}[✓] New Termo-Kali version found and installed${RESET}"
-        echo -e "${CYAN}[*] Restarting Termo-Kali...${RESET}"
-        sleep 1
-        exec bash "$current_script"
-    else
-        rm -f "$temp_file"
-        echo -e "${RED}[✗] Could not install the update${RESET}"
-        read -r -p "Press Enter to return..."
+
+    chmod +x "$temp_script"
+    if ! mv "$temp_script" "$current_script"; then
+        rm -f "$temp_script"
+        echo -e "${RED}[✗] Failed to install the Termo-Kali update.${RESET}"
+        return 1
     fi
+
+    echo -e "${GREEN}[✓] Termo-Kali updated successfully.${RESET}"
+    exec bash "$current_script"
 }
 
-show_help_menu() {
+show_help() {
     while true; do
         clear
         display_banner
-        echo -e "${GREEN}╔══════════════════════════════════════════════╗${RESET}"
-        echo -e "${GREEN}║${WHITE}                 HELP MENU                   ${GREEN}║${RESET}"
-        echo -e "${GREEN}╠══════════════════════════════════════════════╣${RESET}"
-        echo -e "${GREEN}║${CYAN}  1)${WHITE} Reinstall Kali Linux                    ${GREEN}║${RESET}"
-        echo -e "${GREEN}║${CYAN}  2)${WHITE} Update Termo-Kali                       ${GREEN}║${RESET}"
-        echo -e "${GREEN}║${CYAN}  3)${WHITE} Help Documentation                     ${GREEN}║${RESET}"
-        echo -e "${GREEN}║${CYAN}  4)${WHITE} Back                                  ${GREEN}║${RESET}"
-        echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
-
-        read -r -p "Select an option [1-4]: " help_choice
-        case "$help_choice" in
+        echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${RESET}"
+        echo -e "${GREEN}║${CYAN}                         HELP MENU                         ${GREEN}║${RESET}"
+        echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${RESET}"
+        echo -e "${GREEN}║${CYAN}  1)${WHITE} Reinstall Kali Linux                              ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  2)${WHITE} Update Termo-Kali                                ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  3)${WHITE} Help Documentation                               ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  4)${WHITE} Back                                             ${GREEN}║${RESET}"
+        echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${RESET}"
+        read -rp "Choose an option: " choice
+        case "$choice" in
             1)
                 clear
                 display_banner
                 echo -e "${YELLOW}[*] Reinstalling Kali Linux CLI...${RESET}"
-                rm -f start-kali.sh
+                rm -rf kali-fs start-kali.sh 2>/dev/null
                 install_kali
                 cleanup
-                echo -e "${GREEN}[✓] Reinstallation completed${RESET}"
-                read -r -p "Press Enter to continue..."
+                read -rp "Press Enter to continue..."
                 ;;
             2)
                 update_termokali
@@ -478,19 +455,18 @@ show_help_menu() {
             3)
                 clear
                 display_banner
-                if [ -f "kali-help.txt" ]; then
+                if [ -f kali-help.txt ]; then
                     cat kali-help.txt
                 else
-                    echo -e "${YELLOW}[•] Help documentation is not available yet.${RESET}"
+                    echo -e "${YELLOW}Kali help documentation is not available yet.${RESET}"
                 fi
-                echo
-                read -r -p "Press Enter to return..."
+                read -rp "Press Enter to continue..."
                 ;;
             4)
                 return
                 ;;
             *)
-                echo -e "${RED}[✗] Invalid option. Please select 1-4.${RESET}"
+                echo -e "${RED}[✗] Invalid option.${RESET}"
                 sleep 1
                 ;;
         esac
@@ -501,30 +477,32 @@ show_main_menu() {
     while true; do
         clear
         display_banner
-        echo -e "${GREEN}╔══════════════════════════════════════════════╗${RESET}"
-        echo -e "${GREEN}║${WHITE}               TERMO-KALI MENU               ${GREEN}║${RESET}"
-        echo -e "${GREEN}╠══════════════════════════════════════════════╣${RESET}"
+        echo -e "${GREEN}╔════════════════════════════════════════════════════════════╗${RESET}"
+        echo -e "${GREEN}║${CYAN}                       TERMO-KALI                         ${GREEN}║${RESET}"
+        echo -e "${GREEN}╠════════════════════════════════════════════════════════════╣${RESET}"
         echo -e "${GREEN}║${CYAN}  1)${WHITE} Run Kali Linux                         ${GREEN}║${RESET}"
         echo -e "${GREEN}║${CYAN}  2)${WHITE} Desktop Environment                     ${GREEN}║${RESET}"
         echo -e "${GREEN}║${CYAN}  3)${WHITE} Help                                  ${GREEN}║${RESET}"
-        echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
-
-        read -r -p "Select an option [1-3]: " choice
+        echo -e "${GREEN}╚════════════════════════════════════════════════════════════╝${RESET}"
+        read -rp "Choose an option: " choice
         case "$choice" in
             1)
-                clear
-                display_banner
-                echo -e "${GREEN}[*] Starting Kali Linux...${RESET}\n"
-                ./start-kali.sh
+                if [ -f "start-kali.sh" ]; then
+                    bash ./start-kali.sh
+                else
+                    echo -e "${RED}[✗] Kali Linux is not installed.${RESET}"
+                    sleep 2
+                fi
                 ;;
             2)
                 launch_desktop_environment
+                read -rp "Press Enter to continue..."
                 ;;
             3)
-                show_help_menu
+                show_help
                 ;;
             *)
-                echo -e "${RED}[✗] Invalid option. Please select 1-3.${RESET}"
+                echo -e "${RED}[✗] Invalid option.${RESET}"
                 sleep 1
                 ;;
         esac
@@ -534,29 +512,16 @@ show_main_menu() {
 main() {
     clear
     display_banner
-    sleep 2
 
-    if [ ! -d "/data/data/com.termux" ]; then
-        echo -e "${RED}[✗] This script must be run in Termux environment.${RESET}"
+    if [ -z "$PREFIX" ] || [ ! -d "$PREFIX" ]; then
+        echo -e "${RED}[✗] This script must be run inside Termux.${RESET}"
         exit 1
     fi
-
-    echo -e "${GREEN}[✓] Checking required files${RESET}"
-    if [ -f "start-kali.sh" ]; then
-        echo -e "${GREEN}[✓] Existing Kali launcher found${RESET}"
-    else
-        echo -e "${YELLOW}[•] Kali launcher not found; setup will continue${RESET}"
-    fi
-
-    echo -e "${GREEN}[✓] Checking environment${RESET}"
-    echo -e "${YELLOW}[*] Starting installation process...${RESET}"
-    sleep 1
 
     check_dependencies
     install_kali
     cleanup
-
     show_main_menu
 }
 
-main
+main "$@"
