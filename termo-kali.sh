@@ -283,31 +283,122 @@ cleanup() {
     echo -e "${GREEN}[✓] Cleanup completed${RESET}"
 }
 
+# Desktop download/setup uses a clean Termo-Kali progress display.
+# Upstream installer output remains hidden so raw apt/wget text is not shown.
+run_desktop_installer_with_progress() {
+    local installer="$1"
+    local log_file
+    local installer_pid
+    local status
+    local value=0
+    local width=18
+    local filled
+    local empty
+    local filled_bar
+    local empty_bar
+
+    log_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-desktop.XXXXXX")"
+    if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
+        echo -e "${RED}[✗] Could not create desktop installation log${RESET}"
+        return 1
+    fi
+
+    if command -v script >/dev/null 2>&1; then
+        script -q -c "bash \"$installer\"" "$log_file" >/dev/null 2>&1 &
+    else
+        bash "$installer" >"$log_file" 2>&1 &
+    fi
+    installer_pid=$!
+
+    printf "\n${WHITE}  Loading desktop environment${RESET}\n"
+    while kill -0 "$installer_pid" 2>/dev/null; do
+        value=$(( (value + 3) % 101 ))
+        filled=$(( value * width / 100 ))
+        empty=$(( width - filled ))
+        filled_bar=""
+        empty_bar=""
+        [ "$filled" -gt 0 ] && filled_bar=$(printf '█%.0s' $(seq 1 "$filled"))
+        [ "$empty" -gt 0 ] && empty_bar=$(printf '░%.0s' $(seq 1 "$empty"))
+        printf "\033[2K\r${CYAN}[${GREEN}%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET} ${PURPLE}Loading${RESET}" \
+            "$filled_bar" "$empty_bar" "$value"
+        sleep 0.25
+    done
+
+    wait "$installer_pid"
+    status=$?
+
+    if [ "$status" -eq 0 ]; then
+        filled_bar=$(printf '█%.0s' $(seq 1 "$width"))
+        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET} ${WHITE}100%%${RESET} ${GREEN}Complete${RESET}\n" "$filled_bar"
+        echo -e "${GREEN}[✓] Kali XFCE desktop environment setup completed${RESET}"
+    else
+        printf "\033[2K\r"
+        echo -e "${RED}[✗] Kali XFCE desktop environment setup failed${RESET}"
+        echo -e "${YELLOW}Last installer output:${RESET}"
+        tail -n 20 "$log_file"
+    fi
+
+    rm -f "$log_file"
+    return "$status"
+}
+
 launch_desktop_environment() {
     local desktop_script="kali-xfce.sh"
     local desktop_url="https://raw.githubusercontent.com/AndronixApp/AndronixOrigin/master/Installer/Kali/kali-xfce.sh"
-    echo -e "${CYAN}[*] Preparing Kali XFCE desktop environment...${RESET}"
+
+    clear
+    display_banner
+    echo -e "${CYAN}[*] Preparing Kali XFCE desktop environment...${RESET}\n"
+
     if [ -f "$desktop_script" ]; then
-        echo -e "${GREEN}[✓] Kali XFCE installer already available${RESET}"
+        chmod +x "$desktop_script"
     else
-        echo -e "${CYAN}[•] Downloading Kali XFCE installer...${RESET}"
-        if ! download_with_animation "$desktop_url" "$desktop_script"; then
+        # Do not expose wget's 'Downloading' output. Show only a clean loading bar.
+        local download_pid
+        local download_status
+        local value=0
+        local width=18
+        local filled
+        local empty
+        local filled_bar
+        local empty_bar
+
+        wget "$desktop_url" -O "$desktop_script" -q &
+        download_pid=$!
+        printf "${WHITE}  Loading desktop environment${RESET}\n"
+        while kill -0 "$download_pid" 2>/dev/null; do
+            value=$(( (value + 5) % 101 ))
+            filled=$(( value * width / 100 ))
+            empty=$(( width - filled ))
+            filled_bar=""
+            empty_bar=""
+            [ "$filled" -gt 0 ] && filled_bar=$(printf '█%.0s' $(seq 1 "$filled"))
+            [ "$empty" -gt 0 ] && empty_bar=$(printf '░%.0s' $(seq 1 "$empty"))
+            printf "\033[2K\r${CYAN}[${GREEN}%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET} ${PURPLE}Loading${RESET}" \
+                "$filled_bar" "$empty_bar" "$value"
+            sleep 0.2
+        done
+        wait "$download_pid"
+        download_status=$?
+        if [ "$download_status" -ne 0 ] || [ ! -s "$desktop_script" ]; then
+            printf "\033[2K\r"
+            rm -f "$desktop_script"
             echo -e "${RED}[✗] Kali XFCE installer download failed${RESET}"
             read -r -p "Press Enter to return..."
             return
         fi
         chmod +x "$desktop_script"
-        echo -e "${GREEN}[✓] Kali XFCE installer downloaded${RESET}"
+        filled_bar=$(printf '█%.0s' $(seq 1 "$width"))
+        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET} ${WHITE}100%%${RESET} ${GREEN}Loaded${RESET}\n" "$filled_bar"
     fi
-    echo -e "${YELLOW}[*] Starting Kali XFCE desktop setup...${RESET}"
-    bash "$desktop_script"
+
+    run_desktop_installer_with_progress "$desktop_script"
     local desktop_status=$?
-    if [ "$desktop_status" -eq 0 ]; then
-        echo -e "${GREEN}[✓] Kali XFCE desktop environment setup completed${RESET}"
-    else
-        echo -e "${RED}[✗] Kali XFCE desktop environment setup failed${RESET}"
-    fi
     rm -f "$desktop_script" &> /dev/null
+
+    if [ "$desktop_status" -ne 0 ]; then
+        echo -e "${RED}[✗] Desktop environment setup failed${RESET}"
+    fi
     read -r -p "Press Enter to return..."
 }
 
