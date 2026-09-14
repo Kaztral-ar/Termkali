@@ -101,15 +101,15 @@ progress_bar() {
 download_with_animation() {
     local url="$1"
     local output="$2"
-    local frames=('▰▱▱▱▱▱▱▱' '▰▰▱▱▱▱▱▱' '▰▰▰▱▱▱▱▱' '▰▰▰▰▱▱▱▱' '▰▰▰▰▰▱▱▱' '▰▰▰▰▰▰▱▱' '▰▰▰▰▰▰▰▱' '▰▰▰▰▰▰▰▰' '▱▰▰▰▰▰▰▰' '▱▱▰▰▰▰▰▰' '▱▱▱▰▰▰▰▰' '▱▱▱▱▰▰▰▰')
+    local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local i=0
 
     wget "$url" -O "$output" -q &
     local download_pid=$!
 
     while kill -0 "$download_pid" 2>/dev/null; do
-        printf "\r${CYAN}[${frames[$i]}]${RESET} ${WHITE}Downloading Kali setup...${RESET}"
-        i=$(( (i + 1) % ${#frames[@]} ))
+        printf "\r${CYAN}[${spinner[$i]}]${RESET} ${WHITE}Downloading Kali Linux...${RESET}"
+        i=$(( (i + 1) % ${#spinner[@]} ))
         sleep 0.12
     done
 
