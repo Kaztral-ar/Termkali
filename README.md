@@ -2,7 +2,7 @@
 
 ### Kali Linux on Termux & Android — No Root Required
 
-**Termo-Kali** makes it easy to install and run a Kali Linux environment on Android using **Termux + proot**.
+**Termo-Kali** installs and runs a Kali Linux environment on Android using **Termux + PRoot**, with an optional **Xfce + TigerVNC desktop**.
 
 > Simple setup. Reliable installation. Portable Kali environment.
 
@@ -15,61 +15,46 @@
 
 ## ✨ Features
 
-- 🚀 **Easy installation** — get started with a simple installer.
-- 📦 **Automatic dependencies** — required Termux packages are checked and installed automatically.
-- 🔒 **Validated downloads** — downloaded files are checked before execution.
-- 🔁 **Safe to re-run** — existing installations are detected instead of being reinstalled.
-- 📝 **Detailed logging** — installation activity is recorded for troubleshooting.
-- 💻 **Kali Linux environment** — runs through `proot` without root access.
-- 📱 **Android support** — designed specifically for Android through Termux.
-- 🖥️ **XFCE4 support** — optional graphical desktop setup.
-- ⚡ **Lightweight** — minimal setup and configuration.
+- 🚀 One-command Kali installation
+- 📦 Automatic Termux dependency handling
+- 🧭 Automatic ARM64/ARM/x86 architecture detection
+- 🔒 Rootfs archive validation before extraction
+- 🔁 Safe re-runs without unnecessary reinstallation
+- 📝 Persistent installation logs
+- 💻 PRoot-based Kali environment without Android root
+- 🖥️ Optional Kali Xfce desktop
+- 🐯 TigerVNC desktop server
+- 🔐 VNC bound to `127.0.0.1` by default
+- 🧰 Desktop start/stop/restart/status/password commands
+- ⚡ CLI-first base installation to keep the initial setup lighter
 
 ---
 
 ## 📋 Requirements
 
-- 📱 **Android** device
-- 📲 **Termux**
-- 🌐 **Stable internet connection**
-- 💾 **~2 GB+ free storage**
-- 🐚 **Bash**
+- Android device
+- Termux
+- Stable internet connection
+- At least ~2 GB free storage for the base installation
+- Additional storage for Xfce and desktop packages
 
-### Termux
+Use a maintained Termux distribution such as the F-Droid or official GitHub-release builds.
 
-Use a maintained Termux distribution:
-
-- **F-Droid** — recommended
-- **GitHub Releases** — official releases
-
-> ⚠️ The Google Play Store version of Termux is deprecated and should not be used for this project.
+> The Google Play Store version of Termux is deprecated for general use.
 
 ---
 
 ## 🚀 Quick Start
 
-### 1. Update Termux
+### Install Termo-Kali
 
 ```bash
 pkg update -y && pkg upgrade -y
-```
-
-### 2. Install Git
-
-```bash
 pkg install git -y
-```
 
-### 3. Clone Termo-Kali
-
-```bash
 git clone https://github.com/kaztral-ar/termokali.git
 cd termokali
-```
 
-### 4. Run the installer
-
-```bash
 chmod +x termo-kali.sh
 ./termo-kali.sh
 ```
@@ -80,38 +65,111 @@ Or:
 bash termo-kali.sh
 ```
 
-> **Do not use `sh termo-kali.sh`.**  
-> The installer uses Bash-specific syntax.
+> Do not use `sh termo-kali.sh`; the installer uses Bash-specific features.
 
 ---
 
-## 🔧 Installation Process
+## ▶️ Start Kali
 
-Termo-Kali automatically:
+From Termux:
 
-```text
-┌─────────────────────────┐
-│   Check Termux          │
-├─────────────────────────┤
-│   Check Storage         │
-├─────────────────────────┤
-│   Check Internet        │
-├─────────────────────────┤
-│   Install Dependencies  │
-├─────────────────────────┤
-│   Download Kali         │
-├─────────────────────────┤
-│   Validate Download     │
-├─────────────────────────┤
-│   Install Environment   │
-├─────────────────────────┤
-│   Create Helper Files   │
-└────────────┬────────────┘
-             ↓
-        🚀 Launch Kali
+```bash
+~/start-kali.sh
 ```
 
-Creates:
+Verify Kali from inside the environment:
+
+```bash
+cat /etc/os-release
+```
+
+Exit with:
+
+```bash
+exit
+```
+
+---
+
+## 🖥️ Kali Xfce Desktop
+
+Termo-Kali includes a separate desktop manager using the same practical **PRoot + Xfce + VNC** model used by established Android Linux projects. The implementation is kept separate from the base installer so a CLI-only installation does not have to download the full graphical stack.
+
+### 1. Install Xfce + TigerVNC
+
+Run this **from Termux**, outside the Kali shell:
+
+```bash
+cd ~/Termokali
+chmod +x termo-kali-desktop.sh
+./termo-kali-desktop.sh install
+```
+
+It installs:
+
+- `kali-desktop-xfce`
+- `tigervnc-standalone-server`
+- `dbus-x11`
+- `xauth`
+
+### 2. Set a VNC password
+
+```bash
+./termo-kali-desktop.sh passwd
+```
+
+### 3. Start the desktop
+
+```bash
+./termo-kali-desktop.sh start
+```
+
+Open your Android VNC client and connect to:
+
+```text
+127.0.0.1:5901
+```
+
+### Desktop controls
+
+```bash
+./termo-kali-desktop.sh start
+./termo-kali-desktop.sh stop
+./termo-kali-desktop.sh restart
+./termo-kali-desktop.sh status
+./termo-kali-desktop.sh passwd
+```
+
+> The VNC server is intentionally localhost-only by default. This avoids exposing the desktop service to other devices on the network.
+
+> Do not use `systemctl` for this setup. Kali is running inside PRoot on Android rather than as a normal booted system with systemd.
+
+---
+
+## 🔧 Installation Flow
+
+```text
+Termux
+  │
+  ├── Check environment
+  ├── Check storage
+  ├── Install dependencies
+  ├── Detect architecture
+  ├── Download Kali rootfs
+  ├── Validate archive
+  ├── Extract rootfs
+  └── Create start-kali.sh
+           │
+           ▼
+      Kali CLI
+           │
+           └── Optional Xfce + TigerVNC
+                         │
+                         ▼
+                  Android VNC client
+```
+
+Generated files:
 
 ```text
 ~/start-kali.sh
@@ -121,53 +179,48 @@ Creates:
 
 ---
 
-## ▶️ Start Kali
-
-```bash
-~/start-kali.sh
-```
-
-To exit Kali:
-
-```bash
-exit
-```
-
-or press:
-
-```text
-Ctrl + D
-```
-
----
-
-## 🖥️ Optional XFCE4 Desktop
-
-Want a graphical Kali environment?
-
-Additional XFCE4 setup instructions are available in:
-
-```text
-termo.txt
-```
-
-> ⚠️ Run these commands **inside Kali**, not directly in Termux.
-
----
-
-## 🔁 Re-run Safely
-
-You can run the installer again at any time:
-
-```bash
-./termo-kali.sh
-```
-
-If an existing installation is detected, Termo-Kali avoids unnecessary reinstallation.
-
----
-
 ## 🛠️ Troubleshooting
+
+### Check the installer log
+
+```bash
+cat ~/.termo-kali/install.log
+```
+
+### Check free storage
+
+```bash
+df -h "$HOME"
+```
+
+### Repair interrupted Kali packages
+
+Run these **inside Kali**:
+
+```bash
+dpkg --configure -a
+apt-get -f install -y
+apt-get update
+```
+
+If the error says:
+
+```text
+/usr/share/debconf/frontend: not found
+```
+
+repair `debconf` before installing the desktop:
+
+```bash
+apt-get install --reinstall debconf -y
+```
+
+Then:
+
+```bash
+dpkg --configure -a
+apt-get -f install -y
+```
 
 ### Permission denied
 
@@ -175,54 +228,49 @@ If an existing installation is detected, Termo-Kali avoids unnecessary reinstall
 chmod +x ~/start-kali.sh
 ```
 
-### Check storage
+### Stale installer lock
 
-```bash
-df -h $HOME
-```
-
-### View installation log
-
-```bash
-cat ~/.termo-kali/install.log
-```
-
-Or:
-
-```bash
-less ~/.termo-kali/install.log
-```
-
-### Installer lock
-
-If a previous installation crashed:
+Only when no Termo-Kali installer is running:
 
 ```bash
 rm -f ~/.termo-kali/lock
 ```
 
-Only remove the lock when you are certain another Termo-Kali process is not running.
+---
+
+## 🔁 Re-run
+
+The base installer is safe to run again:
+
+```bash
+./termo-kali.sh
+```
+
+Desktop management is separate:
+
+```bash
+./termo-kali-desktop.sh status
+```
 
 ---
 
-## 🗑️ Uninstall
+## 🗑️ Uninstall Kali
 
 ```bash
-rm -rf ~/start-kali.sh ~/kali-* ~/.termo-kali
+rm -rf ~/kali-fs ~/kali-binds ~/start-kali.sh ~/kali-help.txt ~/.termo-kali
 ```
 
-> ⚠️ Back up important files inside Kali before uninstalling.
-
-This does **not** uninstall Termux.
+This does not uninstall Termux.
 
 ---
 
 ## 📁 Project Structure
 
 ```text
-termokali/
+Termokali/
 │
 ├── termo-kali.sh
+├── termo-kali-desktop.sh
 ├── termo.txt
 ├── README.md
 ├── CONTRIBUTING.md
@@ -234,20 +282,9 @@ termokali/
 
 ## 🤝 Contributing
 
-Contributions, bug reports, improvements, and feature requests are welcome.
+Bug reports, feature requests, documentation improvements, testing and code contributions are welcome.
 
-See **[CONTRIBUTING.md](CONTRIBUTING.md)** for contribution guidelines.
-
----
-
-## 💬 Support
-
-Having an issue or need help?
-
-- 🐛 **Bug:** Open an issue on GitHub.
-- 💡 **Feature request:** Open an issue and describe your idea.
-- ❓ **Help:** Check the troubleshooting section and installation log first.
-- 🔧 **Contribution:** See `CONTRIBUTING.md`.
+See `CONTRIBUTING.md` for contribution guidelines.
 
 ---
 
@@ -255,15 +292,13 @@ Having an issue or need help?
 
 Termo-Kali is licensed under the **MIT License**.
 
-See **[LICENSE](LICENSE)** for the full license text.
+See `LICENSE` for the full license text.
 
 ---
 
 ## ⚠️ Disclaimer
 
-Termo-Kali is an **unofficial community project**.
-
-It is not affiliated with, sponsored by, or endorsed by **Kali Linux, Offensive Security, or Termux**.
+Termo-Kali is an unofficial community project. It is not affiliated with, sponsored by, or endorsed by Kali Linux, Offensive Security, Termux, or Andronix.
 
 Use Kali Linux and its tools responsibly and only on systems and networks where you have authorization.
 
