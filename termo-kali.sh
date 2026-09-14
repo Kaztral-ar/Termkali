@@ -144,40 +144,41 @@ check_dependencies() {
     fi
 }
 
+# Kali CLI installer: Andronix Kali rootfs without a desktop environment.
 install_kali() {
-    echo -e "\n${YELLOW}[*] Installing Kali Linux environment...${RESET}\n"
+    echo -e "\n${YELLOW}[*] Installing Kali Linux CLI environment...${RESET}\n"
 
     if [ -f "kali.sh" ]; then
         echo -e "${GREEN}[✓] Kali setup script already available${RESET}"
     else
-        echo -e "${CYAN}[•] Downloading Kali Linux...${RESET}"
-        if ! download_with_animation "https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh" "kali.sh"; then
-            echo -e "${RED}[✗] Kali Linux download failed${RESET}"
+        echo -e "${CYAN}[•] Downloading Kali Linux CLI installer...${RESET}"
+        if ! download_with_animation "https://raw.githubusercontent.com/AndronixApp/AndronixOrigin/master/Installer/Kali/kali.sh" "kali.sh"; then
+            echo -e "${RED}[✗] Kali Linux CLI download failed${RESET}"
             exit 1
         fi
 
         if [ ! -f "kali.sh" ]; then
-            echo -e "${RED}[✗] Kali Linux download failed${RESET}"
+            echo -e "${RED}[✗] Kali Linux CLI download failed${RESET}"
             exit 1
         fi
 
-        echo -e "${GREEN}[✓] Kali Linux files downloaded${RESET}"
+        echo -e "${GREEN}[✓] Kali Linux CLI installer downloaded${RESET}"
     fi
 
     if [ -f "start-kali.sh" ]; then
         echo -e "${GREEN}[✓] Existing Kali installation detected${RESET}"
     else
-        progress_spinner "Preparing Kali Linux environment"
+        progress_spinner "Preparing Kali Linux CLI environment"
         bash kali.sh &> /dev/null
         local install_status=$?
         stop_spinner
 
         if [ "$install_status" -ne 0 ] || [ ! -f "start-kali.sh" ]; then
-            echo -e "${RED}[✗] Kali Linux installation failed.${RESET}"
+            echo -e "${RED}[✗] Kali Linux CLI installation failed.${RESET}"
             exit 1
         fi
 
-        echo -e "${GREEN}[✓] Kali Linux installed successfully${RESET}"
+        echo -e "${GREEN}[✓] Kali Linux CLI installed successfully${RESET}"
     fi
 
     cat > kali-help.txt << 'EOL'
@@ -213,23 +214,37 @@ cleanup() {
     echo -e "${GREEN}[✓] Cleanup completed${RESET}"
 }
 
-# Desktop environment setup using the existing Termo-Kali desktop script.
+# Desktop environment installer: Andronix Kali XFCE image/installer.
 launch_desktop_environment() {
-    if [ ! -f "termo.txt" ]; then
-        echo -e "${RED}[✗] Desktop environment script not found: termo.txt${RESET}"
-        read -r -p "Press Enter to return..."
-        return
+    local desktop_script="kali-xfce.sh"
+    local desktop_url="https://raw.githubusercontent.com/AndronixApp/AndronixOrigin/master/Installer/Kali/kali-xfce.sh"
+
+    echo -e "${CYAN}[*] Preparing Kali XFCE desktop environment...${RESET}"
+
+    if [ -f "$desktop_script" ]; then
+        echo -e "${GREEN}[✓] Kali XFCE installer already available${RESET}"
+    else
+        echo -e "${CYAN}[•] Downloading Kali XFCE installer...${RESET}"
+        if ! download_with_animation "$desktop_url" "$desktop_script"; then
+            echo -e "${RED}[✗] Kali XFCE installer download failed${RESET}"
+            read -r -p "Press Enter to return..."
+            return
+        fi
+        chmod +x "$desktop_script"
+        echo -e "${GREEN}[✓] Kali XFCE installer downloaded${RESET}"
     fi
 
-    echo -e "${CYAN}[*] Starting desktop environment setup...${RESET}"
-    bash termo.txt
+    echo -e "${YELLOW}[*] Starting Kali XFCE desktop setup...${RESET}"
+    bash "$desktop_script"
     local desktop_status=$?
 
     if [ "$desktop_status" -eq 0 ]; then
-        echo -e "${GREEN}[✓] Desktop environment setup completed${RESET}"
+        echo -e "${GREEN}[✓] Kali XFCE desktop environment setup completed${RESET}"
     else
-        echo -e "${RED}[✗] Desktop environment setup failed${RESET}"
+        echo -e "${RED}[✗] Kali XFCE desktop environment setup failed${RESET}"
     fi
+
+    rm -f "$desktop_script" &> /dev/null
     read -r -p "Press Enter to return..."
 }
 
@@ -249,7 +264,7 @@ show_help_menu() {
         read -r -p "Select an option [1-4]: " help_choice
         case "$help_choice" in
             1)
-                echo -e "\n${YELLOW}[*] Reinstalling Kali Linux...${RESET}"
+                echo -e "\n${YELLOW}[*] Reinstalling Kali Linux CLI...${RESET}"
                 rm -f start-kali.sh
                 install_kali
                 cleanup
