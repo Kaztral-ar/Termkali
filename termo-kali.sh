@@ -37,6 +37,14 @@ display_banner() {
         '   \\_^_/\\   /'
         '      \\__/'
     )
+    local branding=(
+        ' _____ ______________  ________ _   __  ___   _     _____ '
+        '|_   _|  ___| ___ \\  \\/  |  _  | | / / / _ \\ | |   |_   _|'
+        '  | | | |__ | |_/ / .  . | | | | |/ / / /_\\ \\| |     | |  '
+        '  | | |  __||    /| |\\/| | | | |    \\ |  _  || |     | |  '
+        '  | | | |___| |\\ \\| |  | \\ \\_/ / |\\  \\| | | || |_____| |_ '
+        '  \\_/ \\____/\\_| \\_\\_|  |_\\___/\\_| \\_/\\_| |_ /\\_____/\\___/'
+    )
     local line
 
     echo -e ""
@@ -45,8 +53,11 @@ display_banner() {
     done
     echo -e ""
 
-    if [ "$width" -ge 32 ]; then
-        printf "${WHITE}TERMO-KALI${RESET}\n"
+    if [ "$width" -ge 58 ]; then
+        for line in "${branding[@]}"; do
+            printf "%b%s%b\n" "${WHITE}" "$line" "${RESET}"
+        done
+        echo -e ""
         printf "${CYAN}KALI LINUX • TERMUX • PROOT${RESET}\n"
         printf "${BLUE}NO ROOT REQUIRED${RESET}\n"
     else
