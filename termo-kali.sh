@@ -1,54 +1,30 @@
 #!/data/data/com.termux/files/usr/bin/bash
-#
-# =============================================================================
 # Termo-Kali — Kali Linux installer for Termux
-# =============================================================================
-#
-# Installs Kali Linux (via proot, using the EXALAB/AnLinux-Resources
-# bootstrap) directly into $HOME, so the result always lives at
-# ~/start-kali.sh regardless of which directory this script is run from.
-#
-# Exit codes:
-#   0  success
-#   1  generic/unexpected failure
-#   10 not running inside Termux
-#   11 another instance is already running
-#   12 insufficient free disk space
-#   13 dependency install failed
-#   14 network unreachable
-#   15 download failed / invalid downloaded file
-#   16 Kali bootstrap install failed
-#
+# Reliable banner rendering + correct Termux paths + readable logging.
+
 set -Eeuo pipefail
 
-# ---- Paths ------------------------------------------------------------------
-readonly KALI_HOME="$HOME"                       # where start-kali.sh must end up
-readonly STATE_DIR="$HOME/.termo-kali"           # our own bookkeeping, kept out of $HOME clutter
+readonly KALI_HOME="$HOME"
+readonly STATE_DIR="$HOME/.termo-kali"
 readonly LOGFILE="$STATE_DIR/install.log"
 readonly LOCKFILE="$STATE_DIR/lock"
 readonly HELP_FILE="$HOME/kali-help.txt"
 readonly START_SCRIPT="$KALI_HOME/start-kali.sh"
-
-# ---- Remote resources --------------------------------------------------------
 readonly KALI_INSTALLER_URL="https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh"
+readonly MIN_FREE_MB=2048
 
-# ---- Requirements -------------------------------------------------------------
-readonly MIN_FREE_MB=2048   # conservative floor for a Kali rootfs + package cache
-
-# package_name:representative_binary  (binary left empty -> checked via dpkg only)
 readonly REQUIRED_PKGS=(
-    "bash:bash"
-    "coreutils:"
-    "curl:curl"
-    "wget:wget"
-    "proot:proot"
-    "tar:tar"
-    "xz-utils:xz"
-    "openssl-tool:openssl"   # package is openssl-tool; the binary it ships is `openssl`
-    "bc:bc"
+  "bash:bash"
+  "coreutils:"
+  "curl:curl"
+  "wget:wget"
+  "proot:proot"
+  "tar:tar"
+  "xz-utils:xz"
+  "openssl-tool:openssl"
+  "bc:bc"
 )
 
-# ---- Colors -------------------------------------------------------------------
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
 readonly YELLOW='\033[1;33m'
@@ -58,434 +34,265 @@ readonly CYAN='\033[1;36m'
 readonly WHITE='\033[1;37m'
 readonly RESET='\033[0m'
 
-# ---- Global state used by trap/cleanup ----------------------------------------
 SPIN_PID=""
 TMP_DIR=""
 
-# =============================================================================
-# Logging / UI
-# =============================================================================
+log_info(){ echo -e "${BLUE}[INFO]${RESET} $*"; }
+log_ok(){ echo -e "${GREEN}[OK]${RESET} $*"; }
+log_warn(){ echo -e "${YELLOW}[WARN]${RESET} $*"; }
+log_err(){ echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+log_to_file(){ [[ -d "$STATE_DIR" ]] && printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOGFILE"; }
 
-log_info() { echo -e "${BLUE}[INFO]${RESET} $*"; }
-log_ok()   { echo -e "${GREEN}[OK]${RESET} $*"; }
-log_warn() { echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_err()  { echo -e "${RED}[ERROR]${RESET} $*" >&2; }
+die(){ local code="$1"; shift; log_err "$*"; log_to_file "FATAL: $*"; exit "$code"; }
 
-# Mirrors every message into the logfile too, timestamped, once STATE_DIR exists.
-log_to_file() {
-    [[ -d "$STATE_DIR" ]] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] $*" >>"$LOGFILE"
+# ASCII-only banner: avoids broken boxes/glyphs on Termux fonts/terminals.
+display_banner(){
+  clear 2>/dev/null || true
+  printf '\n'
+  printf '%b============================================================%b\n' "$YELLOW" "$RESET"
+  printf '%b                    TERMO-KALI%b\n' "$WHITE" "$RESET"
+  printf '%b============================================================%b\n' "$YELLOW" "$RESET"
+  printf '%b      Advanced Kali Linux Installation for Termux%b\n' "$CYAN" "$RESET"
+  printf '%b============================================================%b\n\n' "$YELLOW" "$RESET"
 }
 
-die() {
-    local code="$1"; shift
-    log_err "$*"
-    log_to_file "FATAL: $*"
-    exit "$code"
-}
-
-print_help() {
-    cat <<EOF
-Termo-Kali installer
-
-Usage: $(basename "$0") [options]
-
-Options:
-  -h, --help    Show this help and exit
-
-Installs Kali Linux under Termux via proot. Kali is installed directly into
-\$HOME, so ~/start-kali.sh is created regardless of the directory you run
-this script from. Safe to re-run: if Kali is already installed, it skips
-straight to the launch prompt.
-
-Logs:   ${LOGFILE}
-Help:   ${HELP_FILE} (created after a successful install)
-EOF
-}
-
-display_banner() {
-    clear
-    cat <<'BANNER'
-
-              ████████╗███████╗██████╗ ███╗   ███╗ ██████╗       ██╗  ██╗ █████╗ ██╗     ██╗
-              ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗      ██║ ██╔╝██╔══██╗██║     ██║
-                 ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║█████╗█████╔╝ ███████║██║     ██║
-                 ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║╚════╝██╔═██╗ ██╔══██║██║     ██║
-                 ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝      ██║  ██╗██║  ██║███████╗██║
-                 ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝
-
-BANNER
-    echo -e "${YELLOW}               ╔══════════════════════════════════════════════════════════╗"
-    echo -e "${YELLOW}               ║  ${WHITE}Advanced Kali Linux Installation for Termux Environment${YELLOW}  ║"
-    echo -e "${YELLOW}               ╚══════════════════════════════════════════════════════════╝${RESET}"
-    echo
-}
-
-# Background spinner. Always paired with stop_spinner, but the EXIT trap
-# guarantees it's reaped even if an error path forgets to call it.
-progress_spinner() {
-    local message="$1"
-    local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
-    local i=0
-    (
-        while true; do
-            printf '\r%b[%b%s%b] %s' "$PURPLE" "$BLUE" "${frames[$i]}" "$PURPLE" "$message"
-            sleep 0.1
-            i=$(( (i + 1) % ${#frames[@]} ))
-        done
-    ) &
-    SPIN_PID=$!
-    disown
-}
-
-stop_spinner() {
-    if [[ -n "$SPIN_PID" ]] && kill -0 "$SPIN_PID" 2>/dev/null; then
-        kill "$SPIN_PID" 2>/dev/null
-        wait "$SPIN_PID" 2>/dev/null || true
-    fi
-    SPIN_PID=""
-    printf '\r\033[K'
-}
-
-# Pure-bash/bc-free would be ideal, but `bc` is now a declared dependency
-# (needed by several Kali/pentest tools anyway), so use it deliberately here
-# rather than reimplementing float math — this doubles as a functional check
-# that the bc dependency actually works.
-progress_bar() {
-    local duration="$1" steps=20
-    local delay
-    delay=$(echo "scale=2; $duration/$steps" | bc)
-    printf '%bProgress: %b|' "$PURPLE" "$RESET"
-    for ((i = 0; i < steps; i++)); do
-        sleep "$delay"
-        printf '%b█%b' "$GREEN" "$RESET"
+progress_spinner(){
+  local message="$1"
+  (
+    while true; do
+      printf '\r%b[+]%b %s' "$PURPLE" "$RESET" "$message"
+      sleep 0.5
+      printf '\r%b[. ]%b %s' "$PURPLE" "$RESET" "$message"
+      sleep 0.5
     done
-    printf '| %bComplete!%b\n' "$GREEN" "$RESET"
+  ) &
+  SPIN_PID=$!
 }
 
-# =============================================================================
-# Cleanup / signal handling
-# =============================================================================
+stop_spinner(){
+  if [[ -n "$SPIN_PID" ]]; then
+    kill "$SPIN_PID" 2>/dev/null || true
+    wait "$SPIN_PID" 2>/dev/null || true
+    SPIN_PID=""
+  fi
+  printf '\r\033[K'
+}
 
-cleanup_and_exit() {
-    local exit_code=$?
-    stop_spinner
-    [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
-    rm -f "$LOCKFILE" 2>/dev/null || true
-
-    if [[ $exit_code -ne 0 ]]; then
-        log_err "Installation aborted (exit code $exit_code)."
-        [[ -f "$LOGFILE" ]] && log_warn "See $LOGFILE for details."
-    fi
-    exit "$exit_code"
+cleanup_and_exit(){
+  local code=$?
+  stop_spinner
+  [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
+  rm -f "$LOCKFILE" 2>/dev/null || true
+  if (( code != 0 )); then
+    log_err "Installation aborted (exit code $code)."
+    [[ -f "$LOGFILE" ]] && log_warn "See $LOGFILE for details."
+  fi
+  exit "$code"
 }
 trap cleanup_and_exit EXIT
-trap 'exit 130' INT    # convert Ctrl+C into a normal trapped exit (128+SIGINT)
+trap 'exit 130' INT
 trap 'exit 143' TERM
 
-# =============================================================================
-# Preflight checks
-# =============================================================================
-
-require_termux() {
-    if [[ ! -d "/data/data/com.termux" ]]; then
-        die 10 "This script must be run inside a Termux environment."
-    fi
-    if [[ -z "${PREFIX:-}" ]] || [[ ! -x "${PREFIX}/bin/bash" ]]; then
-        log_warn "\$PREFIX doesn't look like a standard Termux install; continuing cautiously."
-    fi
+require_termux(){
+  [[ -d /data/data/com.termux ]] || die 10 "This script must be run inside Termux."
+  command -v pkg >/dev/null 2>&1 || die 10 "Termux package manager (pkg) was not found."
 }
 
-acquire_lock() {
-    mkdir -p "$STATE_DIR"
-    if [[ -e "$LOCKFILE" ]]; then
-        local pid
-        pid=$(cat "$LOCKFILE" 2>/dev/null || echo "")
-        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
-            die 11 "Another instance is already running (pid $pid)."
-        fi
-        log_warn "Removing stale lock from a previous crashed run."
-        rm -f "$LOCKFILE"
+acquire_lock(){
+  mkdir -p "$STATE_DIR"
+  if [[ -e "$LOCKFILE" ]]; then
+    local pid=""
+    pid=$(cat "$LOCKFILE" 2>/dev/null || true)
+    if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
+      die 11 "Another instance is already running (pid $pid)."
     fi
-    echo $$ > "$LOCKFILE"
+    rm -f "$LOCKFILE"
+  fi
+  printf '%s\n' "$$" > "$LOCKFILE"
 }
 
-check_disk_space() {
-    local free_mb
-    free_mb=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2 {print $4}')
-    if [[ -z "$free_mb" ]]; then
-        log_warn "Could not determine free disk space; continuing anyway."
-        return
-    fi
-    if (( free_mb < MIN_FREE_MB )); then
-        die 12 "Only ${free_mb}MB free in \$HOME; Kali needs at least ${MIN_FREE_MB}MB."
-    fi
-    log_ok "Disk space check passed (${free_mb}MB free)."
+check_disk_space(){
+  local free_mb
+  free_mb=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
+  if [[ -z "$free_mb" ]]; then
+    log_warn "Could not determine free disk space; continuing."
+    return
+  fi
+  (( free_mb >= MIN_FREE_MB )) || die 12 "Only ${free_mb}MB free; at least ${MIN_FREE_MB}MB is recommended."
+  log_ok "Disk space: ${free_mb}MB free."
 }
 
-# Returns 0 if the package appears installed, 1 otherwise.
-pkg_is_installed() {
-    local pkg="$1" bin="$2"
-    if [[ -n "$bin" ]] && command -v "$bin" &>/dev/null; then
-        return 0
-    fi
-    # coreutils/xz-utils-style packages have no single canonical binary name
-    # guaranteed to exist under that exact name; fall back to Termux's own
-    # package database (dpkg is the backend `pkg`/apt use on Termux itself —
-    # this queries Termux's own state, it does not assume a Debian/Ubuntu host).
-    if command -v dpkg &>/dev/null && dpkg -s "$pkg" &>/dev/null 2>&1; then
-        return 0
-    fi
-    return 1
+pkg_is_installed(){
+  local pkg="$1" bin="$2"
+  [[ -n "$bin" ]] && command -v "$bin" >/dev/null 2>&1 && return 0
+  command -v dpkg >/dev/null 2>&1 && dpkg -s "$pkg" >/dev/null 2>&1
 }
 
-check_dependencies() {
-    progress_spinner "Checking system dependencies"
-    local missing=()
-    local entry pkg bin
-    for entry in "${REQUIRED_PKGS[@]}"; do
-        pkg="${entry%%:*}"
-        bin="${entry#*:}"
-        pkg_is_installed "$pkg" "$bin" || missing+=("$pkg")
-    done
-    stop_spinner
+check_dependencies(){
+  progress_spinner "Checking Termux dependencies"
+  local missing=() entry pkg bin
+  for entry in "${REQUIRED_PKGS[@]}"; do
+    pkg="${entry%%:*}"
+    bin="${entry#*:}"
+    pkg_is_installed "$pkg" "$bin" || missing+=("$pkg")
+  done
+  stop_spinner
 
-    if [[ ${#missing[@]} -eq 0 ]]; then
-        log_ok "All dependencies are installed."
-        return
-    fi
+  if ((${#missing[@]} == 0)); then
+    log_ok "All dependencies are installed."
+    return
+  fi
 
-    log_warn "Installing missing dependencies: ${missing[*]}"
+  log_warn "Installing: ${missing[*]}"
+  pkg update -y >> "$LOGFILE" 2>&1 || die 13 "pkg update failed."
+  pkg install -y "${missing[@]}" >> "$LOGFILE" 2>&1 || die 13 "Dependency installation failed."
 
-    if ! pkg update -y >>"$LOGFILE" 2>&1; then
-        die 13 "\`pkg update\` failed. Check your internet connection (see $LOGFILE)."
-    fi
-
-    if ! pkg install -y "${missing[@]}" >>"$LOGFILE" 2>&1; then
-        die 13 "Failed to install: ${missing[*]} (see $LOGFILE)."
-    fi
-
-    # Re-verify — a package can report success while still lacking the
-    # expected binary if the repo mirror served a broken build.
-    local still_missing=()
-    for entry in "${REQUIRED_PKGS[@]}"; do
-        pkg="${entry%%:*}"
-        bin="${entry#*:}"
-        pkg_is_installed "$pkg" "$bin" || still_missing+=("$pkg")
-    done
-    if [[ ${#still_missing[@]} -gt 0 ]]; then
-        die 13 "Still missing after install: ${still_missing[*]} (see $LOGFILE)."
-    fi
-    log_ok "Dependencies installed successfully."
+  local still_missing=()
+  for entry in "${REQUIRED_PKGS[@]}"; do
+    pkg="${entry%%:*}"
+    bin="${entry#*:}"
+    pkg_is_installed "$pkg" "$bin" || still_missing+=("$pkg")
+  done
+  ((${#still_missing[@]} == 0)) || die 13 "Still missing: ${still_missing[*]}"
+  log_ok "Dependencies installed successfully."
 }
 
-check_network() {
-    progress_spinner "Checking network connectivity"
-    local reachable=1
-    if command -v curl &>/dev/null; then
-        curl --silent --head --fail --max-time 10 "$KALI_INSTALLER_URL" >/dev/null 2>&1 || reachable=0
-    else
-        wget --spider --quiet --timeout=10 "$KALI_INSTALLER_URL" 2>/dev/null || reachable=0
-    fi
-    stop_spinner
-
-    if [[ $reachable -ne 1 ]]; then
-        die 14 "Cannot reach $KALI_INSTALLER_URL. Check your internet connection."
-    fi
-    log_ok "Network reachable."
+check_network(){
+  progress_spinner "Checking network connectivity"
+  local ok=1
+  if command -v curl >/dev/null 2>&1; then
+    curl -fsSLI --connect-timeout 15 --max-time 20 "$KALI_INSTALLER_URL" >/dev/null 2>&1 || ok=0
+  elif command -v wget >/dev/null 2>&1; then
+    wget --spider --timeout=15 "$KALI_INSTALLER_URL" >/dev/null 2>&1 || ok=0
+  else
+    ok=0
+  fi
+  stop_spinner
+  (( ok == 1 )) || die 14 "Cannot reach the Kali installer URL."
+  log_ok "Network reachable."
 }
 
-# =============================================================================
-# Download + validation
-# =============================================================================
-
-# Retries across both tools where available; HTTPS only.
-download_file() {
-    local url="$1" dest="$2" attempt
-    for attempt in 1 2 3; do
-        if command -v curl &>/dev/null; then
-            if curl --fail --silent --show-error --location \
-                    --connect-timeout 15 --max-time 120 \
-                    -o "$dest" "$url" 2>>"$LOGFILE"; then
-                return 0
-            fi
-        elif command -v wget &>/dev/null; then
-            if wget --quiet --timeout=15 --tries=1 -O "$dest" "$url" 2>>"$LOGFILE"; then
-                return 0
-            fi
-        else
-            log_err "Neither curl nor wget is available."
-            return 1
-        fi
-        log_warn "Download attempt $attempt/3 failed; retrying..."
-        sleep 2
-    done
-    return 1
+download_file(){
+  local url="$1" dest="$2" attempt
+  for attempt in 1 2 3; do
+    if command -v curl >/dev/null 2>&1 && curl -fsSL --connect-timeout 15 --max-time 180 -o "$dest" "$url" >> "$LOGFILE" 2>&1; then
+      return 0
+    fi
+    if command -v wget >/dev/null 2>&1 && wget -q --timeout=15 -O "$dest" "$url" >> "$LOGFILE" 2>&1; then
+      return 0
+    fi
+    log_warn "Download attempt $attempt/3 failed."
+    sleep 2
+  done
+  return 1
 }
 
-# Rejects empty files, HTML error pages, and anything that isn't valid shell
-# syntax, so a GitHub 404/rate-limit page never gets piped into bash.
-validate_shell_script() {
-    local file="$1"
-
-    if [[ ! -s "$file" ]]; then
-        log_err "Downloaded file is empty."
-        return 1
-    fi
-
-    if head -c 1024 "$file" 2>/dev/null | grep -qi '<html'; then
-        log_err "Downloaded file looks like an HTML page, not a script."
-        return 1
-    fi
-
-    if ! bash -n "$file" 2>>"$LOGFILE"; then
-        log_err "Downloaded file failed shell syntax validation."
-        return 1
-    fi
-
-    return 0
+validate_shell_script(){
+  local file="$1"
+  [[ -s "$file" ]] || return 1
+  head -c 2048 "$file" 2>/dev/null | grep -qiE '<html|<!doctype' && return 1
+  bash -n "$file" >> "$LOGFILE" 2>&1
 }
 
-# =============================================================================
-# Install
-# =============================================================================
+install_kali(){
+  if [[ -f "$START_SCRIPT" ]]; then
+    chmod +x "$START_SCRIPT" 2>/dev/null || true
+    log_ok "Kali launcher already exists: $START_SCRIPT"
+    return
+  fi
 
-install_kali() {
-    if [[ -x "$START_SCRIPT" ]]; then
-        log_ok "Kali Linux is already installed (${START_SCRIPT} found)."
-        return
-    fi
+  check_network
+  TMP_DIR=$(mktemp -d "$STATE_DIR/kali.XXXXXX") || die 15 "Could not create temporary directory."
+  local kali_script="$TMP_DIR/kali.sh"
 
-    log_info "Installing Kali Linux environment into \$HOME..."
-    check_network
+  progress_spinner "Downloading Kali installer"
+  local ok=1
+  download_file "$KALI_INSTALLER_URL" "$kali_script" || ok=0
+  stop_spinner
+  (( ok == 1 )) || die 15 "Failed to download Kali installer."
 
-    TMP_DIR=$(mktemp -d "${TMPDIR:-$STATE_DIR}/kali.XXXXXX")
-    local kali_script="$TMP_DIR/kali.sh"
+  validate_shell_script "$kali_script" || die 15 "Downloaded installer failed validation."
+  log_ok "Installer downloaded and validated."
 
-    progress_spinner "Downloading Kali setup script"
-    local ok=1
-    download_file "$KALI_INSTALLER_URL" "$kali_script" || ok=0
-    stop_spinner
+  progress_spinner "Installing Kali Linux (this may take several minutes)"
+  local install_ok=1
+  ( cd "$KALI_HOME" && bash "$kali_script" ) >> "$LOGFILE" 2>&1 || install_ok=0
+  stop_spinner
 
-    [[ $ok -eq 1 ]] || die 15 "Failed to download the Kali setup script after retries."
+  if (( install_ok != 1 )); then
+    die 16 "Kali installer returned an error."
+  fi
+  [[ -f "$START_SCRIPT" ]] || die 16 "Kali installer finished but $START_SCRIPT was not created."
 
-    if ! validate_shell_script "$kali_script"; then
-        die 15 "Downloaded installer failed validation; refusing to execute it."
-    fi
-    log_ok "Downloaded and validated Kali setup script."
-
-    if command -v sha256sum &>/dev/null; then
-        # Upstream publishes no checksum to verify against; this is an audit
-        # trail of exactly what was executed, not a substitute for a real
-        # signature check.
-        log_to_file "kali.sh sha256: $(sha256sum "$kali_script" | cut -d' ' -f1)"
-    fi
-
-    progress_spinner "Setting up Kali Linux environment (this can take a while)"
-    local install_ok=1
-    ( cd "$KALI_HOME" && bash "$kali_script" ) >>"$LOGFILE" 2>&1 || install_ok=0
-    stop_spinner
-
-    if [[ $install_ok -ne 1 ]] || [[ ! -f "$START_SCRIPT" ]]; then
-        die 16 "Kali Linux installation failed. See $LOGFILE for details."
-    fi
-
-    chmod +x "$START_SCRIPT"
-    log_ok "Kali Linux installed successfully at $START_SCRIPT."
+  chmod +x "$START_SCRIPT" || die 16 "Could not make $START_SCRIPT executable."
+  log_ok "Kali installed: $START_SCRIPT"
 }
 
-write_help_file() {
-    cat > "$HELP_FILE" << EOF
-# ------ TERMO-KALI QUICK REFERENCE ------
+write_help_file(){
+  cat > "$HELP_FILE" <<EOF
+TERMO-KALI QUICK REFERENCE
 
-## Starting Kali
-    ~/start-kali.sh
-(or: bash ~/start-kali.sh)
+Start Kali:
+  $START_SCRIPT
 
-## Exiting Kali
-    exit
-(or Ctrl+D at the Kali prompt — this returns you to Termux, it does not
-uninstall anything.)
+If permission is denied:
+  chmod +x "$START_SCRIPT"
+  "$START_SCRIPT"
 
-## Fixing "permission denied" when starting Kali
-    chmod +x ~/start-kali.sh
-Then run ./start-kali.sh (or ~/start-kali.sh) again.
+Exit Kali:
+  exit
 
-## Inside Kali
-- Update packages:   apt update && apt upgrade -y
-- Install a tool:    apt install <package-name>
-- Network tools:     nmap, wireshark, aircrack-ng
-- Web tools:         burpsuite, sqlmap, nikto
-- Password tools:    hydra, john, hashcat
-- Exploitation:      metasploit-framework, searchsploit
-- Wordlists:         /usr/share/wordlists/
-- Optional GUI desktop (run INSIDE Kali, not Termux): see termo.txt
+Installer log:
+  $LOGFILE
 
-## Troubleshooting
-- Re-running this installer is safe: if ~/start-kali.sh already exists it
-  skips straight to the launch prompt instead of reinstalling.
-- Full install log: ${LOGFILE}
-- "Another instance is already running": a previous run may have crashed
-  without cleaning up; wait a moment or remove ${LOCKFILE} if you're sure
-  nothing else is running.
-- Download/network errors: verify Termux has internet access and that
-  Android hasn't restricted its background data.
-- Low storage errors: Kali needs roughly 2GB+ free; check with 'df -h \$HOME'.
-- To start over completely: rm -rf ~/start-kali.sh ~/kali-* ~/.termo-kali
-  (this removes the installed Kali environment — back up anything inside
-  it first).
+Optional XFCE4 desktop:
+  See termo.txt in the repository.
 
-For more information, visit: https://www.kali.org/docs/
+Kali documentation:
+  https://www.kali.org/docs/
 EOF
-    log_ok "Wrote help file to $HELP_FILE."
+  log_ok "Wrote help file: $HELP_FILE"
 }
 
-prompt_launch() {
-    local reply="y"
-    echo -ne "${PURPLE}[*] ${YELLOW}Launch Kali now? [Y/n] (auto-yes in 10s): ${RESET}"
-    read -r -t 10 reply || true
-    echo
-    case "${reply,,}" in
-        n|no) log_info "Skipping launch. Run: $START_SCRIPT" ;;
-        *)    exec "$START_SCRIPT" ;;
+prompt_launch(){
+  local reply=""
+  printf '%b[*]%b Launch Kali now? [Y/n]: ' "$PURPLE" "$RESET"
+  IFS= read -r -t 10 reply || true
+  echo
+  case "${reply,,}" in
+    n|no) log_info "Skipping launch. Run: $START_SCRIPT" ;;
+    *) exec "$START_SCRIPT" ;;
+  esac
+}
+
+main(){
+  for arg in "$@"; do
+    case "$arg" in
+      -h|--help)
+        printf 'Usage: %s [--help]\n' "$(basename "$0")"
+        exit 0
+        ;;
     esac
-}
+  done
 
-# =============================================================================
-# Main
-# =============================================================================
+  mkdir -p "$STATE_DIR"
+  : > "$LOGFILE"
+  display_banner
+  require_termux
+  acquire_lock
+  check_disk_space
+  log_info "Starting installation process..."
+  check_dependencies
+  install_kali
+  write_help_file
 
-main() {
-    for arg in "$@"; do
-        case "$arg" in
-            -h|--help) print_help; exit 0 ;;
-        esac
-    done
+  printf '\n%b============================================================%b\n' "$GREEN" "$RESET"
+  printf '%b Installation complete!%b\n' "$GREEN" "$WHITE"
+  printf ' Start Kali: %b%s%b\n' "$CYAN" "$START_SCRIPT" "$RESET"
+  printf ' Help:       %bcat %s%b\n' "$CYAN" "$HELP_FILE" "$RESET"
+  printf '%b============================================================%b\n\n' "$GREEN" "$RESET"
 
-    display_banner
-    sleep 1
-
-    mkdir -p "$STATE_DIR"
-    : > "$LOGFILE"
-
-    require_termux
-    acquire_lock
-    check_disk_space
-
-    log_info "Starting installation process..."
-
-    check_dependencies
-    install_kali
-    write_help_file
-
-    echo -e "\n${GREEN}╔═════════════════════════════════════════════╗${RESET}"
-    echo -e "${GREEN}║ ${WHITE}Installation Complete! Run the following:    ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${CYAN}~/start-kali.sh                             ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${WHITE}For help and commands reference, view:      ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${CYAN}cat ~/kali-help.txt                         ${GREEN}║${RESET}"
-    echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
-
-    progress_bar 3
-    prompt_launch
+  prompt_launch
 }
 
 main "$@"
