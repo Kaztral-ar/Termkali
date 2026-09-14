@@ -14,6 +14,9 @@ PURPLE='\033[1;35m'
 WHITE='\033[1;37m'
 RESET='\033[0m'
 
+# Termo-Kali repository used for self-updates.
+TERMO_KALI_UPDATE_URL="https://raw.githubusercontent.com/Kaztral-ar/Termokali/main/termo-kali.sh"
+
 # Get current terminal width without adding a dependency.
 get_terminal_width() {
     local width
@@ -248,6 +251,59 @@ launch_desktop_environment() {
     read -r -p "Press Enter to return..."
 }
 
+# Check GitHub and replace the running installer only when a newer script is available.
+update_termokali() {
+    local script_path="${BASH_SOURCE[0]}"
+    local script_dir
+    local current_script
+    local temp_file
+
+    script_dir="$(cd "$(dirname "$script_path")" 2>/dev/null && pwd)"
+    current_script="${script_dir}/$(basename "$script_path")"
+    temp_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-update.XXXXXX")"
+
+    if [ -z "$temp_file" ] || [ ! -f "$temp_file" ]; then
+        echo -e "${RED}[✗] Could not create update file${RESET}"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    echo -e "${CYAN}[*] Checking Termo-Kali repository for updates...${RESET}"
+
+    if ! wget -q "$TERMO_KALI_UPDATE_URL" -O "$temp_file"; then
+        rm -f "$temp_file"
+        echo -e "${RED}[✗] Could not check for updates. Check your internet connection.${RESET}"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    if [ ! -s "$temp_file" ]; then
+        rm -f "$temp_file"
+        echo -e "${RED}[✗] Update file is empty or invalid${RESET}"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    if cmp -s "$current_script" "$temp_file"; then
+        rm -f "$temp_file"
+        echo -e "${GREEN}[✓] Termo-Kali is already up to date${RESET}"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    chmod +x "$temp_file"
+    if mv "$temp_file" "$current_script"; then
+        echo -e "${GREEN}[✓] New Termo-Kali version found and installed${RESET}"
+        echo -e "${CYAN}[*] Restarting Termo-Kali...${RESET}"
+        sleep 1
+        exec bash "$current_script"
+    else
+        rm -f "$temp_file"
+        echo -e "${RED}[✗] Could not install the update${RESET}"
+        read -r -p "Press Enter to return..."
+    fi
+}
+
 show_help_menu() {
     while true; do
         clear
@@ -272,11 +328,7 @@ show_help_menu() {
                 read -r -p "Press Enter to continue..."
                 ;;
             2)
-                echo -e "\n${YELLOW}[*] Updating Termo-Kali dependencies...${RESET}"
-                pkg update -y &> /dev/null
-                pkg upgrade -y &> /dev/null
-                echo -e "${GREEN}[✓] Termo-Kali environment updated${RESET}"
-                read -r -p "Press Enter to continue..."
+                update_termokali
                 ;;
             3)
                 clear
