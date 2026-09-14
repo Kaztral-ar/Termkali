@@ -1,35 +1,24 @@
 #!/data/data/com.termux/files/usr/bin/bash
+#
 # Termo-Kali — Kali Linux installer for Termux
-# Reliable banner rendering + correct Termux paths + readable logging.
-
+# Reliable rootfs installation, Termux-safe paths, ASCII UI and useful errors.
+#
 set -Eeuo pipefail
 
 readonly KALI_HOME="$HOME"
-readonly STATE_DIR="$HOME/.termo-kali"
+readonly KALI_ROOTFS="$KALI_HOME/kali-fs"
+readonly KALI_BINDS="$KALI_HOME/kali-binds"
+readonly START_SCRIPT="$KALI_HOME/start-kali.sh"
+readonly HELP_FILE="$KALI_HOME/kali-help.txt"
+readonly STATE_DIR="$KALI_HOME/.termo-kali"
 readonly LOGFILE="$STATE_DIR/install.log"
 readonly LOCKFILE="$STATE_DIR/lock"
-readonly HELP_FILE="$HOME/kali-help.txt"
-readonly START_SCRIPT="$KALI_HOME/start-kali.sh"
-readonly KALI_INSTALLER_URL="https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh"
 readonly MIN_FREE_MB=2048
-
-readonly REQUIRED_PKGS=(
-  "bash:bash"
-  "coreutils:"
-  "curl:curl"
-  "wget:wget"
-  "proot:proot"
-  "tar:tar"
-  "xz-utils:xz"
-  "openssl-tool:openssl"
-  "bc:bc"
-)
+readonly ROOTFS_BASE_URL="https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Rootfs/Kali"
 
 readonly RED='\033[1;31m'
 readonly GREEN='\033[1;32m'
 readonly YELLOW='\033[1;33m'
-readonly BLUE='\033[1;34m'
-readonly PURPLE='\033[1;35m'
 readonly CYAN='\033[1;36m'
 readonly WHITE='\033[1;37m'
 readonly RESET='\033[0m'
@@ -37,32 +26,37 @@ readonly RESET='\033[0m'
 SPIN_PID=""
 TMP_DIR=""
 
-log_info(){ echo -e "${BLUE}[INFO]${RESET} $*"; }
-log_ok(){ echo -e "${GREEN}[OK]${RESET} $*"; }
-log_warn(){ echo -e "${YELLOW}[WARN]${RESET} $*"; }
-log_err(){ echo -e "${RED}[ERROR]${RESET} $*" >&2; }
-log_to_file(){ [[ -d "$STATE_DIR" ]] && printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOGFILE"; }
+log_info(){ printf '%b[INFO]%b %s\n' "$CYAN" "$RESET" "$*"; }
+log_ok(){ printf '%b[OK]%b %s\n' "$GREEN" "$RESET" "$*"; }
+log_warn(){ printf '%b[WARN]%b %s\n' "$YELLOW" "$RESET" "$*"; }
+log_err(){ printf '%b[ERROR]%b %s\n' "$RED" "$RESET" "$*" >&2; }
+log_file(){ printf '[%s] %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$*" >> "$LOGFILE"; }
 
-die(){ local code="$1"; shift; log_err "$*"; log_to_file "FATAL: $*"; exit "$code"; }
+die(){
+  local code="$1"
+  shift
+  log_err "$*"
+  log_file "FATAL: $*"
+  return "$code"
+}
 
-# ASCII-only banner: avoids broken boxes/glyphs on Termux fonts/terminals.
 display_banner(){
   clear 2>/dev/null || true
   printf '\n'
   printf '%b============================================================%b\n' "$YELLOW" "$RESET"
   printf '%b                    TERMO-KALI%b\n' "$WHITE" "$RESET"
   printf '%b============================================================%b\n' "$YELLOW" "$RESET"
-  printf '%b      Advanced Kali Linux Installation for Termux%b\n' "$CYAN" "$RESET"
+  printf '%b       Advanced Kali Linux Installation for Termux%b\n' "$CYAN" "$RESET"
   printf '%b============================================================%b\n\n' "$YELLOW" "$RESET"
 }
 
 progress_spinner(){
   local message="$1"
   (
-    while true; do
-      printf '\r%b[+]%b %s' "$PURPLE" "$RESET" "$message"
+    while :; do
+      printf '\r%b[+]%b %s' "$CYAN" "$RESET" "$message"
       sleep 0.5
-      printf '\r%b[. ]%b %s' "$PURPLE" "$RESET" "$message"
+      printf '\r%b[.]%b %s' "$CYAN" "$RESET" "$message"
       sleep 0.5
     done
   ) &
@@ -78,8 +72,8 @@ stop_spinner(){
   printf '\r\033[K'
 }
 
-cleanup_and_exit(){
-  local code=$?
+cleanup(){
+  local code="$1"
   stop_spinner
   [[ -n "$TMP_DIR" && -d "$TMP_DIR" ]] && rm -rf "$TMP_DIR"
   rm -f "$LOCKFILE" 2>/dev/null || true
@@ -87,15 +81,21 @@ cleanup_and_exit(){
     log_err "Installation aborted (exit code $code)."
     [[ -f "$LOGFILE" ]] && log_warn "See $LOGFILE for details."
   fi
+}
+
+on_exit(){
+  local code=$?
+  trap - EXIT
+  cleanup "$code"
   exit "$code"
 }
-trap cleanup_and_exit EXIT
+trap on_exit EXIT
 trap 'exit 130' INT
 trap 'exit 143' TERM
 
 require_termux(){
-  [[ -d /data/data/com.termux ]] || die 10 "This script must be run inside Termux."
-  command -v pkg >/dev/null 2>&1 || die 10 "Termux package manager (pkg) was not found."
+  [[ -d /data/data/com.termux ]] || { die 10 "This script must be run inside Termux."; return 10; }
+  command -v pkg >/dev/null 2>&1 || { die 10 "Termux package manager (pkg) was not found."; return 10; }
 }
 
 acquire_lock(){
@@ -104,7 +104,8 @@ acquire_lock(){
     local pid=""
     pid=$(cat "$LOCKFILE" 2>/dev/null || true)
     if [[ "$pid" =~ ^[0-9]+$ ]] && kill -0 "$pid" 2>/dev/null; then
-      die 11 "Another instance is already running (pid $pid)."
+      die 11 "Another Termo-Kali installation is already running (pid $pid)."
+      return 11
     fi
     rm -f "$LOCKFILE"
   fi
@@ -113,131 +114,162 @@ acquire_lock(){
 
 check_disk_space(){
   local free_mb
-  free_mb=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2{print $4}')
-  if [[ -z "$free_mb" ]]; then
+  free_mb=$(df -Pm "$HOME" 2>/dev/null | awk 'NR==2{print $4}') || true
+  if [[ ! "$free_mb" =~ ^[0-9]+$ ]]; then
     log_warn "Could not determine free disk space; continuing."
-    return
+    return 0
   fi
-  (( free_mb >= MIN_FREE_MB )) || die 12 "Only ${free_mb}MB free; at least ${MIN_FREE_MB}MB is recommended."
+  if (( free_mb < MIN_FREE_MB )); then
+    die 12 "Only ${free_mb}MB free; at least ${MIN_FREE_MB}MB is recommended for Kali."
+    return 12
+  fi
   log_ok "Disk space: ${free_mb}MB free."
 }
 
-pkg_is_installed(){
-  local pkg="$1" bin="$2"
-  [[ -n "$bin" ]] && command -v "$bin" >/dev/null 2>&1 && return 0
-  command -v dpkg >/dev/null 2>&1 && dpkg -s "$pkg" >/dev/null 2>&1
-}
-
-check_dependencies(){
-  progress_spinner "Checking Termux dependencies"
-  local missing=() entry pkg bin
-  for entry in "${REQUIRED_PKGS[@]}"; do
-    pkg="${entry%%:*}"
-    bin="${entry#*:}"
-    pkg_is_installed "$pkg" "$bin" || missing+=("$pkg")
+install_dependencies(){
+  local required=(wget proot tar xz-utils)
+  local missing=()
+  local pkg
+  for pkg in "${required[@]}"; do
+    dpkg -s "$pkg" >/dev/null 2>&1 || missing+=("$pkg")
   done
-  stop_spinner
 
   if ((${#missing[@]} == 0)); then
-    log_ok "All dependencies are installed."
-    return
+    log_ok "Required Termux packages are installed."
+    return 0
   fi
 
-  log_warn "Installing: ${missing[*]}"
-  pkg update -y >> "$LOGFILE" 2>&1 || die 13 "pkg update failed."
-  pkg install -y "${missing[@]}" >> "$LOGFILE" 2>&1 || die 13 "Dependency installation failed."
-
-  local still_missing=()
-  for entry in "${REQUIRED_PKGS[@]}"; do
-    pkg="${entry%%:*}"
-    bin="${entry#*:}"
-    pkg_is_installed "$pkg" "$bin" || still_missing+=("$pkg")
-  done
-  ((${#still_missing[@]} == 0)) || die 13 "Still missing: ${still_missing[*]}"
-  log_ok "Dependencies installed successfully."
-}
-
-check_network(){
-  progress_spinner "Checking network connectivity"
-  local ok=1
-  if command -v curl >/dev/null 2>&1; then
-    curl -fsSLI --connect-timeout 15 --max-time 20 "$KALI_INSTALLER_URL" >/dev/null 2>&1 || ok=0
-  elif command -v wget >/dev/null 2>&1; then
-    wget --spider --timeout=15 "$KALI_INSTALLER_URL" >/dev/null 2>&1 || ok=0
-  else
-    ok=0
+  log_info "Installing required packages: ${missing[*]}"
+  if ! pkg update -y >>"$LOGFILE" 2>&1; then
+    die 13 "Termux package index update failed. Check your Termux repository/mirror."
+    return 13
   fi
-  stop_spinner
-  (( ok == 1 )) || die 14 "Cannot reach the Kali installer URL."
-  log_ok "Network reachable."
+  if ! pkg install -y "${missing[@]}" >>"$LOGFILE" 2>&1; then
+    die 13 "Failed to install required Termux packages. See $LOGFILE."
+    return 13
+  fi
+  log_ok "Required packages installed."
 }
 
-download_file(){
-  local url="$1" dest="$2" attempt
+get_arch(){
+  local arch
+  arch=$(dpkg --print-architecture 2>/dev/null || true)
+  case "$arch" in
+    aarch64|arm64) printf 'arm64\n' ;;
+    arm|armhf) printf 'armhf\n' ;;
+    amd64|x86_64) printf 'amd64\n' ;;
+    i386|i686|x86) printf 'i386\n' ;;
+    *) return 1 ;;
+  esac
+}
+
+download_rootfs(){
+  local arch="$1"
+  local dest="$2"
+  local url="${ROOTFS_BASE_URL}/${arch}/kali-rootfs-${arch}.tar.xz"
+  local attempt
+
+  log_info "Downloading Kali rootfs for ${arch}. This can take a while."
+  log_file "Rootfs URL: $url"
+
   for attempt in 1 2 3; do
-    if command -v curl >/dev/null 2>&1 && curl -fsSL --connect-timeout 15 --max-time 180 -o "$dest" "$url" >> "$LOGFILE" 2>&1; then
-      return 0
+    rm -f "$dest"
+    if command -v wget >/dev/null 2>&1; then
+      if wget --show-progress --timeout=30 --tries=1 -O "$dest" "$url" >>"$LOGFILE" 2>&1; then
+        [[ -s "$dest" ]] && return 0
+      fi
+    elif command -v curl >/dev/null 2>&1; then
+      if curl -fL --connect-timeout 20 --max-time 1800 -o "$dest" "$url" >>"$LOGFILE" 2>&1; then
+        [[ -s "$dest" ]] && return 0
+      fi
     fi
-    if command -v wget >/dev/null 2>&1 && wget -q --timeout=15 -O "$dest" "$url" >> "$LOGFILE" 2>&1; then
-      return 0
-    fi
-    log_warn "Download attempt $attempt/3 failed."
+    log_warn "Rootfs download attempt ${attempt}/3 failed."
     sleep 2
   done
-  return 1
+
+  die 15 "Could not download the Kali rootfs. Check $LOGFILE for the HTTP/network error."
+  return 15
 }
 
-validate_shell_script(){
-  local file="$1"
-  [[ -s "$file" ]] || return 1
-  head -c 2048 "$file" 2>/dev/null | grep -qiE '<html|<!doctype' && return 1
-  bash -n "$file" >> "$LOGFILE" 2>&1
-}
+extract_rootfs(){
+  local archive="$1"
 
-install_kali(){
-  if [[ -f "$START_SCRIPT" ]]; then
-    chmod +x "$START_SCRIPT" 2>/dev/null || true
-    log_ok "Kali launcher already exists: $START_SCRIPT"
-    return
+  log_info "Validating Kali rootfs archive..."
+  if ! tar -tJf "$archive" >/dev/null 2>>"$LOGFILE"; then
+    die 15 "Downloaded Kali rootfs is corrupted or invalid."
+    return 15
   fi
 
-  check_network
-  TMP_DIR=$(mktemp -d "$STATE_DIR/kali.XXXXXX") || die 15 "Could not create temporary directory."
-  local kali_script="$TMP_DIR/kali.sh"
+  rm -rf "$KALI_ROOTFS.new"
+  mkdir -p "$KALI_ROOTFS.new"
 
-  progress_spinner "Downloading Kali installer"
-  local ok=1
-  download_file "$KALI_INSTALLER_URL" "$kali_script" || ok=0
-  stop_spinner
-  (( ok == 1 )) || die 15 "Failed to download Kali installer."
-
-  validate_shell_script "$kali_script" || die 15 "Downloaded installer failed validation."
-  log_ok "Installer downloaded and validated."
-
-  progress_spinner "Installing Kali Linux (this may take several minutes)"
-  local install_ok=1
-  ( cd "$KALI_HOME" && bash "$kali_script" ) >> "$LOGFILE" 2>&1 || install_ok=0
-  stop_spinner
-
-  if (( install_ok != 1 )); then
-    die 16 "Kali installer returned an error."
+  log_info "Extracting Kali rootfs. Please wait..."
+  if ! proot --link2symlink tar -xJf "$archive" -C "$KALI_ROOTFS.new" >>"$LOGFILE" 2>&1; then
+    rm -rf "$KALI_ROOTFS.new"
+    die 16 "Kali rootfs extraction failed. See $LOGFILE."
+    return 16
   fi
-  [[ -f "$START_SCRIPT" ]] || die 16 "Kali installer finished but $START_SCRIPT was not created."
 
-  chmod +x "$START_SCRIPT" || die 16 "Could not make $START_SCRIPT executable."
-  log_ok "Kali installed: $START_SCRIPT"
+  if [[ ! -x "$KALI_ROOTFS.new/bin/bash" ]]; then
+    rm -rf "$KALI_ROOTFS.new"
+    die 16 "Rootfs extraction completed but /bin/bash was not found."
+    return 16
+  fi
+
+  rm -rf "$KALI_ROOTFS"
+  mv "$KALI_ROOTFS.new" "$KALI_ROOTFS"
+  log_ok "Kali rootfs extracted successfully."
 }
 
-write_help_file(){
+create_launcher(){
+  mkdir -p "$KALI_BINDS"
+
+  cat > "$START_SCRIPT" <<'LAUNCHER'
+#!/data/data/com.termux/files/usr/bin/bash
+set -e
+cd "$(dirname "$0")"
+unset LD_PRELOAD
+
+if command -v pulseaudio >/dev/null 2>&1; then
+  pulseaudio --start >/dev/null 2>&1 || true
+fi
+
+exec proot --link2symlink -0 \
+  -r "$HOME/kali-fs" \
+  -b /dev \
+  -b /proc \
+  -b "$HOME/kali-fs/root:/dev/shm" \
+  -w /root \
+  /usr/bin/env -i \
+  HOME=/root \
+  PATH=/usr/local/sbin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin:/usr/games:/usr/local/games \
+  TERM="${TERM:-xterm-256color}" \
+  LANG=C.UTF-8 \
+  /bin/bash --login "$@"
+LAUNCHER
+
+  chmod +x "$START_SCRIPT"
+  log_ok "Created launcher: $START_SCRIPT"
+}
+
+configure_optional_audio(){
+  # Audio is optional. The old AnLinux installer made PulseAudio configuration
+  # part of the critical install path, which could make the entire installation
+  # fail even when the Kali rootfs was valid. Termo-Kali deliberately does not
+  # fail the installation because PulseAudio is unavailable.
+  if command -v pulseaudio >/dev/null 2>&1; then
+    log_ok "PulseAudio detected; audio support is available."
+  else
+    log_info "PulseAudio not installed; continuing without audio configuration."
+  fi
+}
+
+write_help(){
   cat > "$HELP_FILE" <<EOF
 TERMO-KALI QUICK REFERENCE
 
 Start Kali:
-  $START_SCRIPT
-
-If permission is denied:
-  chmod +x "$START_SCRIPT"
-  "$START_SCRIPT"
+  ~/start-kali.sh
 
 Exit Kali:
   exit
@@ -245,8 +277,15 @@ Exit Kali:
 Installer log:
   $LOGFILE
 
+Kali rootfs:
+  $KALI_ROOTFS
+
 Optional XFCE4 desktop:
-  See termo.txt in the repository.
+  See termo.txt in the Termo-Kali repository.
+
+Troubleshooting:
+  If installation fails, run:
+    tail -n 80 "$LOGFILE"
 
 Kali documentation:
   https://www.kali.org/docs/
@@ -254,9 +293,54 @@ EOF
   log_ok "Wrote help file: $HELP_FILE"
 }
 
+install_kali(){
+  if [[ -x "$START_SCRIPT" && -x "$KALI_ROOTFS/bin/bash" ]]; then
+    log_ok "Kali is already installed: $START_SCRIPT"
+    return 0
+  fi
+
+  # Remove an incomplete installation but preserve a valid existing rootfs.
+  if [[ -d "$KALI_ROOTFS" && ! -x "$KALI_ROOTFS/bin/bash" ]]; then
+    log_warn "Found an incomplete Kali rootfs; removing it before reinstalling."
+    rm -rf "$KALI_ROOTFS"
+  fi
+
+  local arch
+  arch=$(get_arch) || {
+    die 14 "Unsupported Termux architecture: $(dpkg --print-architecture 2>/dev/null || echo unknown)"
+    return 14
+  }
+
+  TMP_DIR=$(mktemp -d "$STATE_DIR/install.XXXXXX") || {
+    die 15 "Could not create temporary installation directory."
+    return 15
+  }
+
+  local archive="$TMP_DIR/kali-rootfs-${arch}.tar.xz"
+
+  if [[ ! -x "$KALI_ROOTFS/bin/bash" ]]; then
+    download_rootfs "$arch" "$archive" || return $?
+    extract_rootfs "$archive" || return $?
+  fi
+
+  create_launcher
+  configure_optional_audio
+
+  [[ -x "$START_SCRIPT" ]] || {
+    die 16 "Launcher was not created correctly."
+    return 16
+  }
+  [[ -x "$KALI_ROOTFS/bin/bash" ]] || {
+    die 16 "Kali rootfs is incomplete."
+    return 16
+  }
+
+  log_ok "Kali Linux installation completed successfully."
+}
+
 prompt_launch(){
   local reply=""
-  printf '%b[*]%b Launch Kali now? [Y/n]: ' "$PURPLE" "$RESET"
+  printf '%b[*]%b Launch Kali now? [Y/n]: ' "$CYAN" "$RESET"
   IFS= read -r -t 10 reply || true
   echo
   case "${reply,,}" in
@@ -266,28 +350,27 @@ prompt_launch(){
 }
 
 main(){
-  for arg in "$@"; do
-    case "$arg" in
-      -h|--help)
-        printf 'Usage: %s [--help]\n' "$(basename "$0")"
-        exit 0
-        ;;
-    esac
-  done
+  case "${1:-}" in
+    -h|--help)
+      printf 'Usage: %s [--help]\n' "$(basename "$0")"
+      exit 0
+      ;;
+  esac
 
   mkdir -p "$STATE_DIR"
   : > "$LOGFILE"
   display_banner
-  require_termux
-  acquire_lock
-  check_disk_space
-  log_info "Starting installation process..."
-  check_dependencies
-  install_kali
-  write_help_file
+  require_termux || return $?
+  acquire_lock || return $?
+  check_disk_space || return $?
+
+  log_info "Starting Termo-Kali installation..."
+  install_dependencies || return $?
+  install_kali || return $?
+  write_help || return $?
 
   printf '\n%b============================================================%b\n' "$GREEN" "$RESET"
-  printf '%b Installation complete!%b\n' "$GREEN" "$WHITE"
+  printf '%b Installation complete!%b\n' "$GREEN" "$RESET"
   printf ' Start Kali: %b%s%b\n' "$CYAN" "$START_SCRIPT" "$RESET"
   printf ' Help:       %bcat %s%b\n' "$CYAN" "$HELP_FILE" "$RESET"
   printf '%b============================================================%b\n\n' "$GREEN" "$RESET"
