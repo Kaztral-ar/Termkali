@@ -291,6 +291,7 @@ run_desktop_installer_with_progress() {
     local block_width=2
     local frame
     local label="Preparing XFCE"
+    local first_frame=1
 
     log_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-desktop.XXXXXX")"
     if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
@@ -330,8 +331,14 @@ run_desktop_installer_with_progress() {
             fi
         done
 
-        printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET}\n" "$frame"
-        printf "\033[2K\r  ${WHITE}%s${RESET}" "$label"
+        if [ "$first_frame" -eq 1 ]; then
+            printf "\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET}\n" "$frame"
+            printf "\033[2K\r  ${WHITE}%s${RESET}" "$label"
+            first_frame=0
+        else
+            printf "\033[1A\033[2K\r${CYAN}[${GREEN}%s${CYAN}]${RESET}\n" "$frame"
+            printf "\033[2K\r  ${WHITE}%s${RESET}" "$label"
+        fi
 
         position=$((position + direction))
         if [ "$position" -ge $((width - block_width)) ]; then
@@ -347,7 +354,9 @@ run_desktop_installer_with_progress() {
     wait "$installer_pid"
     status=$?
 
+    # Remove the two live animation lines before printing the final result once.
     printf "\033[2K\r"
+    printf "\033[1A\033[2K\r"
     if [ "$status" -eq 0 ]; then
         printf "${CYAN}[${GREEN}▱▱▰▰▱▱▱▱▱▱▱▱${CYAN}]${RESET}\n"
         echo -e "  ${GREEN}Complete${RESET}"
