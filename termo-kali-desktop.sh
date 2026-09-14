@@ -14,20 +14,27 @@ require_kali(){
     err "Kali is not installed. Run ./termo-kali.sh first."
     exit 1
   fi
+  if [[ ! -x "$ROOTFS/usr/bin/dpkg" ]]; then
+    err "Kali rootfs is incomplete: /usr/bin/dpkg is missing."
+    exit 1
+  fi
 }
 
 run_kali(){
+  HOME=/root \
+  USER=root \
+  LOGNAME=root \
+  PATH=/usr/local/sbin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin:/usr/games:/usr/local/games \
+  TERM="${TERM:-xterm-256color}" \
+  LANG=C.UTF-8 \
+  LC_ALL=C.UTF-8 \
   proot --link2symlink -0 \
     -r "$ROOTFS" \
     -b /dev \
     -b /proc \
+    -b /sys \
     -b "$ROOTFS/root:/dev/shm" \
     -w /root \
-    /usr/bin/env -i \
-    HOME=/root \
-    PATH=/usr/local/sbin:/usr/local/bin:/bin:/usr/bin:/sbin:/usr/sbin:/usr/games:/usr/local/games \
-    TERM="${TERM:-xterm-256color}" \
-    LANG=C.UTF-8 \
     /bin/bash --login -c "$1"
 }
 
