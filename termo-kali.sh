@@ -24,7 +24,6 @@ get_terminal_width() {
 }
 
 # Function to display a modern responsive banner
-# The layout automatically switches to a compact version on narrow terminals.
 display_banner() {
     clear
     local width
@@ -68,37 +67,29 @@ display_banner() {
     echo -e ""
 }
 
-# Function to display spinning progress indicator
 progress_spinner() {
     local message="$1"
     local spinner=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏')
     local delay=0.1
     local i=0
-    
     while true; do
         echo -ne "\r${PURPLE}[${BLUE}${spinner[$i]}${PURPLE}] ${message}"
         sleep $delay
         i=$(( (i+1) % ${#spinner[@]} ))
     done &
-    
     SPIN_PID=$!
-    
-    # Store the PID so we can kill it later
     disown
 }
 
-# Function to stop the spinner
 stop_spinner() {
     kill $SPIN_PID 2>/dev/null
     echo -ne "\r\033[K"
 }
 
-# Function to display progress bar
 progress_bar() {
     local duration=$1
     local steps=20
     local delay=$(echo "scale=2; $duration/$steps" | bc)
-    
     echo -ne "${PURPLE}Progress: ${RESET}|"
     for ((i=0; i<steps; i++)); do
         sleep $delay
@@ -107,8 +98,6 @@ progress_bar() {
     echo -ne "| ${GREEN}Complete!${RESET}\n"
 }
 
-# Animated download indicator without a percentage.
-# The animation runs while wget performs the real download in the background.
 download_with_animation() {
     local url="$1"
     local output="$2"
@@ -130,21 +119,19 @@ download_with_animation() {
     return "$status"
 }
 
-# Function to check dependencies
 check_dependencies() {
     progress_spinner "Checking dependencies"
-    
     local dependencies=("wget" "python" "openssl-tool" "proot")
     local missing_deps=()
-    
+
     for dep in "${dependencies[@]}"; do
         if ! command -v "$dep" &> /dev/null; then
             missing_deps+=("$dep")
         fi
     done
-    
+
     stop_spinner
-    
+
     if [ ${#missing_deps[@]} -gt 0 ]; then
         echo -e "${YELLOW}[•] Installing required dependencies...${RESET}"
         pkg update -y &> /dev/null
@@ -157,10 +144,9 @@ check_dependencies() {
     fi
 }
 
-# Function to install Kali Linux
 install_kali() {
     echo -e "\n${YELLOW}[*] Installing Kali Linux environment...${RESET}\n"
-    
+
     if [ -f "kali.sh" ]; then
         echo -e "${GREEN}[✓] Kali setup script already available${RESET}"
     else
@@ -169,15 +155,15 @@ install_kali() {
             echo -e "${RED}[✗] Kali Linux download failed${RESET}"
             exit 1
         fi
-        
+
         if [ ! -f "kali.sh" ]; then
             echo -e "${RED}[✗] Kali Linux download failed${RESET}"
             exit 1
         fi
-        
+
         echo -e "${GREEN}[✓] Kali Linux files downloaded${RESET}"
     fi
-    
+
     if [ -f "start-kali.sh" ]; then
         echo -e "${GREEN}[✓] Existing Kali installation detected${RESET}"
     else
@@ -185,16 +171,15 @@ install_kali() {
         bash kali.sh &> /dev/null
         local install_status=$?
         stop_spinner
-        
+
         if [ "$install_status" -ne 0 ] || [ ! -f "start-kali.sh" ]; then
             echo -e "${RED}[✗] Kali Linux installation failed.${RESET}"
             exit 1
         fi
-        
+
         echo -e "${GREEN}[✓] Kali Linux installed successfully${RESET}"
     fi
-    
-    # Create a help file with useful commands
+
     cat > kali-help.txt << 'EOL'
 # ------ KALI LINUX QUICK REFERENCE ------
 
@@ -221,7 +206,6 @@ For more information, visit: https://www.kali.org/docs/
 EOL
 }
 
-# Function to clean up
 cleanup() {
     progress_spinner "Cleaning up installation files"
     rm -f kali.sh &> /dev/null
@@ -229,50 +213,137 @@ cleanup() {
     echo -e "${GREEN}[✓] Cleanup completed${RESET}"
 }
 
-# Main function
+# Desktop environment setup using the existing Termo-Kali desktop script.
+launch_desktop_environment() {
+    if [ ! -f "termo.txt" ]; then
+        echo -e "${RED}[✗] Desktop environment script not found: termo.txt${RESET}"
+        read -r -p "Press Enter to return..."
+        return
+    fi
+
+    echo -e "${CYAN}[*] Starting desktop environment setup...${RESET}"
+    bash termo.txt
+    local desktop_status=$?
+
+    if [ "$desktop_status" -eq 0 ]; then
+        echo -e "${GREEN}[✓] Desktop environment setup completed${RESET}"
+    else
+        echo -e "${RED}[✗] Desktop environment setup failed${RESET}"
+    fi
+    read -r -p "Press Enter to return..."
+}
+
+show_help_menu() {
+    while true; do
+        clear
+        display_banner
+        echo -e "${GREEN}╔══════════════════════════════════════════════╗${RESET}"
+        echo -e "${GREEN}║${WHITE}                 HELP MENU                   ${GREEN}║${RESET}"
+        echo -e "${GREEN}╠══════════════════════════════════════════════╣${RESET}"
+        echo -e "${GREEN}║${CYAN}  1)${WHITE} Reinstall Kali Linux                    ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  2)${WHITE} Update Termo-Kali                       ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  3)${WHITE} Help Documentation                     ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  4)${WHITE} Back                                  ${GREEN}║${RESET}"
+        echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
+
+        read -r -p "Select an option [1-4]: " help_choice
+        case "$help_choice" in
+            1)
+                echo -e "\n${YELLOW}[*] Reinstalling Kali Linux...${RESET}"
+                rm -f start-kali.sh
+                install_kali
+                cleanup
+                echo -e "${GREEN}[✓] Reinstallation completed${RESET}"
+                read -r -p "Press Enter to continue..."
+                ;;
+            2)
+                echo -e "\n${YELLOW}[*] Updating Termo-Kali dependencies...${RESET}"
+                pkg update -y &> /dev/null
+                pkg upgrade -y &> /dev/null
+                echo -e "${GREEN}[✓] Termo-Kali environment updated${RESET}"
+                read -r -p "Press Enter to continue..."
+                ;;
+            3)
+                clear
+                display_banner
+                if [ -f "kali-help.txt" ]; then
+                    cat kali-help.txt
+                else
+                    echo -e "${YELLOW}[•] Help documentation is not available yet.${RESET}"
+                fi
+                echo
+                read -r -p "Press Enter to return..."
+                ;;
+            4)
+                return
+                ;;
+            *)
+                echo -e "${RED}[✗] Invalid option. Please select 1-4.${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
+show_main_menu() {
+    while true; do
+        clear
+        display_banner
+        echo -e "${GREEN}╔══════════════════════════════════════════════╗${RESET}"
+        echo -e "${GREEN}║${WHITE}               TERMO-KALI MENU               ${GREEN}║${RESET}"
+        echo -e "${GREEN}╠══════════════════════════════════════════════╣${RESET}"
+        echo -e "${GREEN}║${CYAN}  1)${WHITE} Run Kali Linux                         ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  2)${WHITE} Desktop Environment                     ${GREEN}║${RESET}"
+        echo -e "${GREEN}║${CYAN}  3)${WHITE} Help                                  ${GREEN}║${RESET}"
+        echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
+
+        read -r -p "Select an option [1-3]: " choice
+        case "$choice" in
+            1)
+                clear
+                display_banner
+                echo -e "${GREEN}[*] Starting Kali Linux...${RESET}\n"
+                ./start-kali.sh
+                ;;
+            2)
+                launch_desktop_environment
+                ;;
+            3)
+                show_help_menu
+                ;;
+            *)
+                echo -e "${RED}[✗] Invalid option. Please select 1-3.${RESET}"
+                sleep 1
+                ;;
+        esac
+    done
+}
+
 main() {
     display_banner
     sleep 2
-    
-    # Check for Termux environment
+
     if [ ! -d "/data/data/com.termux" ]; then
         echo -e "${RED}[✗] This script must be run in Termux environment.${RESET}"
         exit 1
     fi
-    
+
     echo -e "${GREEN}[✓] Checking required files${RESET}"
     if [ -f "start-kali.sh" ]; then
         echo -e "${GREEN}[✓] Existing Kali launcher found${RESET}"
     else
         echo -e "${YELLOW}[•] Kali launcher not found; setup will continue${RESET}"
     fi
-    
+
     echo -e "${GREEN}[✓] Checking environment${RESET}"
     echo -e "${YELLOW}[*] Starting installation process...${RESET}"
     sleep 1
-    
-    # Check dependencies
+
     check_dependencies
-    
-    # Install Kali
     install_kali
-    
-    # Clean up
     cleanup
-    
-    # Final message
-    echo -e "\n${GREEN}╔═════════════════════════════════════════════╗${RESET}"
-    echo -e "${GREEN}║ ${WHITE}Installation Complete! Run the following:    ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${CYAN}./start-kali.sh                             ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${WHITE}For help and commands reference, view:      ${GREEN}║${RESET}"
-    echo -e "${GREEN}║ ${CYAN}cat kali-help.txt                           ${GREEN}║${RESET}"
-    echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
-    
-    echo -e "${GREEN}[✓] Kali Linux installation completed${RESET}"
-    echo -e "\n${PURPLE}[*] ${YELLOW}Starting Kali Linux in 5 seconds...${RESET}"
-    sleep 5
-    ./start-kali.sh
+
+    show_main_menu
 }
 
-# Execute main function
 main
