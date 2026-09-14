@@ -162,9 +162,9 @@ Termo-Kali runs Kali in userspace rather than replacing Android:
 └──────────────────────────┘
 ```
 
-The installer checks for required Termux packages, downloads the Kali setup script, runs the installation, and creates a launcher for starting the environment. citeturn23file0
+The installer checks for required Termux packages, downloads the Kali setup script, runs the installation, and creates a launcher for starting the environment.
 
-This is conceptually similar to the rootless approach documented by Kali NetHunter: Kali can run on an unrooted Android device, but rootless environments have limitations compared with a rooted device and dedicated kernel. citeturn0search0turn0search1
+This is conceptually similar to the rootless approach documented by Kali NetHunter: Kali can run on an unrooted Android device, but rootless environments have limitations compared with a rooted device and dedicated kernel.
 
 ---
 
@@ -178,7 +178,7 @@ Because Termo-Kali uses Termux and PRoot without Android root:
 - Wireless injection and similar kernel-level capabilities are not provided by this setup.
 - Performance can differ from a native Kali installation.
 
-For the official Kali mobile options and their feature differences, see the Kali NetHunter documentation. citeturn0search1
+For the official Kali mobile options and their feature differences, see the Kali NetHunter documentation.
 
 ---
 
@@ -300,15 +300,15 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for the project contribution guidelines.
 
 ## 🔗 Related Projects & Documentation
 
-- [Kali Linux Documentation](https://www.kali.org/docs/) — official Kali documentation. citeturn0search6
-- [Kali NetHunter Rootless](https://www.kali.org/docs/nethunter/nethunter-rootless/) — official rootless Kali-on-Android documentation. citeturn0search0
+- [Kali Linux Documentation](https://www.kali.org/docs/) — official Kali documentation.
+- [Kali NetHunter Rootless](https://www.kali.org/docs/nethunter/nethunter-rootless/) — official rootless Kali-on-Android documentation.
 - [Termux](https://termux.dev/) — terminal environment for Android.
 
 ---
 
 ## ⚖️ License
 
-Termo-Kali is released under the **MIT License**. See [LICENSE](LICENSE) for the complete license text. fileciteturn24file0
+Termo-Kali is released under the **MIT License**. See [LICENSE](LICENSE) for the complete license text.
 
 ---
 
