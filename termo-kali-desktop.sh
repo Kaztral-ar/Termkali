@@ -49,12 +49,22 @@ if [ ! -x /usr/bin/dpkg ]; then
   exit 10
 fi
 
+apt-get update
+
+# Some minimal rootfs images can lose the debconf frontend after an interrupted
+# package operation. Bootstrap it before installing the desktop metapackage.
 if [ ! -x /usr/share/debconf/frontend ]; then
-  echo "WARNING: debconf frontend is missing. Repair the Kali package base before installing the desktop."
-  echo "Try: apt-get install --reinstall debconf -y"
-  exit 11
+  echo "[INFO] debconf frontend is missing; bootstrapping debconf..."
+  tmp=$(mktemp -d)
+  cd "$tmp"
+  apt-get download debconf
+  dpkg --unpack ./debconf_*.deb
+  cd /
+  rm -rf "$tmp"
 fi
 
+dpkg --configure -a || true
+apt-get -f install -y
 apt-get update
 apt-get install -y kali-desktop-xfce tigervnc-standalone-server dbus-x11 xauth
 
@@ -63,6 +73,7 @@ cat > /root/.vnc/xstartup <<"XSTARTUP"
 #!/bin/sh
 unset SESSION_MANAGER
 unset DBUS_SESSION_BUS_ADDRESS
+export SHELL=/bin/bash
 export XDG_CURRENT_DESKTOP=XFCE
 export XDG_SESSION_DESKTOP=xfce
 export XDG_CONFIG_DIRS=/etc/xdg/xdg-xfce:/etc/xdg
@@ -73,12 +84,12 @@ chmod +x /root/.vnc/xstartup
 cat > /usr/local/bin/kali-vnc-start <<"VNCSTART"
 #!/bin/sh
 set -e
-if vncserver -list 2>/dev/null | grep -q ":1"; then
+if vncserver -list 2>/dev/null | grep -q ':1'; then
   echo "Kali desktop is already running on :1 (127.0.0.1:5901)."
   exit 0
 fi
 vncserver :1 -geometry 1280x720 -depth 24 -localhost yes
-printf "Kali Xfce started. Connect your VNC client to 127.0.0.1:5901\\n"
+printf 'Kali Xfce started. Connect your VNC client to 127.0.0.1:5901\n'
 VNCSTART
 chmod +x /usr/local/bin/kali-vnc-start
 
@@ -114,6 +125,7 @@ echo "Start with: kali-desktop start"
 echo "Connect to: 127.0.0.1:5901"
 '
   ok "Desktop setup completed."
+  warn "Kali 2026.x ARM64 + PRoot/Xfce has an upstream compatibility issue affecting gdk-pixbuf/Glycin on some systems. If VNC connects and Xfce exits after a few seconds, run ./termo-kali.sh --doctor and check the upstream issue before changing the installer."
 }
 
 case "${1:-help}" in
@@ -139,6 +151,10 @@ Usage:
 
 VNC address:
   127.0.0.1:5901
+
+Notes:
+  - The VNC server is localhost-only by default.
+  - Do not use systemctl inside the PRoot environment.
 HELP
     ;;
   *)
