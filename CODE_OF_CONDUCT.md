@@ -22,7 +22,7 @@ This Code of Conduct applies within all project spaces (issues, pull requests, d
 
 ## Enforcement
 
-Instances of unacceptable behavior may be reported by opening an issue or contacting the maintainer directly at the project's GitHub page: https://github.com/Kaztral-ar/Termkali. All complaints will be reviewed and investigated.
+Instances of unacceptable behavior may be reported by opening an issue on the project's GitHub repository: https://github.com/Kaztral-ar/Termokali. All complaints will be reviewed and investigated.
 
 ## Attribution
 
