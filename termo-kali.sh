@@ -29,30 +29,30 @@ display_banner() {
     clear
     local width
     width=$(get_terminal_width)
+    local dragon=(
+        '           / \\  //\\'
+        '    |\\___/|      \\//'
+        '    /0  0  \\__  //'
+        '   /     /  \\/_/'
+        '   \\_^_/\\   /'
+        '      \\__/'
+    )
+    local line
 
-    if [ "$width" -ge 64 ]; then
-        echo -e ""
-        echo -e "${CYAN}╭──────────────────────────────────────────────────────────────╮${RESET}"
-        echo -e "${CYAN}│${RESET}                                                              ${CYAN}│${RESET}"
-        printf "${CYAN}│${RESET}                 ${WHITE}⚡ TERMO-${CYAN}KALI${RESET}                         ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}          ${WHITE}KALI LINUX • TERMUX • ANDROID${RESET}                ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}                  ${BLUE}◈ PROOT  •  NO ROOT${RESET}                   ${CYAN}│${RESET}\n"
-        echo -e "${CYAN}│${RESET}                                                              ${CYAN}│${RESET}"
-        echo -e "${CYAN}╰──────────────────────────────────────────────────────────────╯${RESET}"
-    elif [ "$width" -ge 42 ]; then
-        echo -e ""
-        echo -e "${CYAN}╭──────────────────────────────────────╮${RESET}"
-        printf "${CYAN}│${RESET}          ${WHITE}⚡ TERMO-${CYAN}KALI${RESET}          ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}     ${WHITE}KALI • TERMUX • ANDROID${RESET}      ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}          ${BLUE}◈ NO ROOT${RESET}              ${CYAN}│${RESET}\n"
-        echo -e "${CYAN}╰──────────────────────────────────────╯${RESET}"
+    echo -e ""
+    for line in "${dragon[@]}"; do
+        printf "%b%s%b\n" "${CYAN}" "$line" "${RESET}"
+    done
+    echo -e ""
+
+    if [ "$width" -ge 32 ]; then
+        printf "${WHITE}TERMO-KALI${RESET}\n"
+        printf "${CYAN}KALI LINUX • TERMUX • PROOT${RESET}\n"
+        printf "${BLUE}NO ROOT REQUIRED${RESET}\n"
     else
-        echo -e ""
-        echo -e "${CYAN}╭────────────────────────────╮${RESET}"
-        printf "${CYAN}│${RESET}       ${WHITE}⚡ TERMO-KALI${RESET}       ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}       ${BLUE}KALI • TERMUX${RESET}       ${CYAN}│${RESET}\n"
-        printf "${CYAN}│${RESET}         ${BLUE}NO ROOT${RESET}           ${CYAN}│${RESET}\n"
-        echo -e "${CYAN}╰────────────────────────────╯${RESET}"
+        printf "${WHITE}TERMO-KALI${RESET}\n"
+        printf "${CYAN}KALI • TERMUX • PROOT${RESET}\n"
+        printf "${BLUE}NO ROOT${RESET}\n"
     fi
     echo -e ""
 }
@@ -121,7 +121,7 @@ download_with_animation() {
 
 # Function to check dependencies
 check_dependencies() {
-    progress_spinner "Checking system dependencies"
+    progress_spinner "Checking dependencies"
     
     local dependencies=("wget" "python" "openssl-tool" "proot")
     local missing_deps=()
@@ -135,14 +135,14 @@ check_dependencies() {
     stop_spinner
     
     if [ ${#missing_deps[@]} -gt 0 ]; then
-        echo -e "${YELLOW}[!] Installing missing dependencies: ${WHITE}${missing_deps[*]}${RESET}"
+        echo -e "${YELLOW}[•] Installing required dependencies...${RESET}"
         pkg update -y &> /dev/null
         for dep in "${missing_deps[@]}"; do
             pkg install -y "$dep" &> /dev/null
         done
-        echo -e "${GREEN}[✓] Dependencies installed successfully${RESET}"
+        echo -e "${GREEN}[✓] Dependencies ready${RESET}"
     else
-        echo -e "${GREEN}[✓] All dependencies are installed${RESET}"
+        echo -e "${GREEN}[✓] Dependencies ready${RESET}"
     fi
 }
 
@@ -150,29 +150,38 @@ check_dependencies() {
 install_kali() {
     echo -e "\n${YELLOW}[*] Installing Kali Linux environment...${RESET}\n"
     
-    echo -e "${CYAN}[*] Downloading Kali setup script${RESET}"
-    if ! download_with_animation "https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh" "kali.sh"; then
-        echo -e "${RED}[✗] Failed to download Kali setup script. Check your internet connection.${RESET}"
-        exit 1
+    if [ -f "kali.sh" ]; then
+        echo -e "${GREEN}[✓] Kali setup script already available${RESET}"
+    else
+        echo -e "${CYAN}[•] Downloading Kali Linux...${RESET}"
+        if ! download_with_animation "https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh" "kali.sh"; then
+            echo -e "${RED}[✗] Kali Linux download failed${RESET}"
+            exit 1
+        fi
+        
+        if [ ! -f "kali.sh" ]; then
+            echo -e "${RED}[✗] Kali Linux download failed${RESET}"
+            exit 1
+        fi
+        
+        echo -e "${GREEN}[✓] Kali Linux files downloaded${RESET}"
     fi
     
-    if [ ! -f "kali.sh" ]; then
-        echo -e "${RED}[✗] Failed to download Kali setup script. Check your internet connection.${RESET}"
-        exit 1
+    if [ -f "start-kali.sh" ]; then
+        echo -e "${GREEN}[✓] Existing Kali installation detected${RESET}"
+    else
+        progress_spinner "Preparing Kali Linux environment"
+        bash kali.sh &> /dev/null
+        local install_status=$?
+        stop_spinner
+        
+        if [ "$install_status" -ne 0 ] || [ ! -f "start-kali.sh" ]; then
+            echo -e "${RED}[✗] Kali Linux installation failed.${RESET}"
+            exit 1
+        fi
+        
+        echo -e "${GREEN}[✓] Kali Linux installed successfully${RESET}"
     fi
-    
-    echo -e "${GREEN}[✓] Downloaded Kali setup script${RESET}"
-    
-    progress_spinner "Setting up Kali Linux environment"
-    bash kali.sh &> /dev/null
-    stop_spinner
-    
-    if [ ! -f "start-kali.sh" ]; then
-        echo -e "${RED}[✗] Kali Linux installation failed.${RESET}"
-        exit 1
-    fi
-    
-    echo -e "${GREEN}[✓] Kali Linux installed successfully${RESET}"
     
     # Create a help file with useful commands
     cat > kali-help.txt << 'EOL'
@@ -220,6 +229,14 @@ main() {
         exit 1
     fi
     
+    echo -e "${GREEN}[✓] Checking required files${RESET}"
+    if [ -f "start-kali.sh" ]; then
+        echo -e "${GREEN}[✓] Existing Kali launcher found${RESET}"
+    else
+        echo -e "${YELLOW}[•] Kali launcher not found; setup will continue${RESET}"
+    fi
+    
+    echo -e "${GREEN}[✓] Checking environment${RESET}"
     echo -e "${YELLOW}[*] Starting installation process...${RESET}"
     sleep 1
     
@@ -240,7 +257,7 @@ main() {
     echo -e "${GREEN}║ ${CYAN}cat kali-help.txt                           ${GREEN}║${RESET}"
     echo -e "${GREEN}╚═════════════════════════════════════════════╝${RESET}"
     
-    progress_bar 3
+    echo -e "${GREEN}[✓] Kali Linux installation completed${RESET}"
     echo -e "\n${PURPLE}[*] ${YELLOW}Starting Kali Linux in 5 seconds...${RESET}"
     sleep 5
     ./start-kali.sh
