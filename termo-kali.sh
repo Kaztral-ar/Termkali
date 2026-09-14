@@ -101,6 +101,7 @@ progress_bar() {
     echo -ne "| ${GREEN}Complete!${RESET}\n"
 }
 
+# Download a small installer script with a spinner while keeping raw output hidden.
 download_with_animation() {
     local url="$1"
     local output="$2"
@@ -111,7 +112,7 @@ download_with_animation() {
     local download_pid=$!
 
     while kill -0 "$download_pid" 2>/dev/null; do
-        printf "\r${CYAN}[${spinner[$i]}]${RESET} ${WHITE}Downloading Kali Linux...${RESET}"
+        printf "\r${CYAN}[${spinner[$i]}]${RESET} ${WHITE}Downloading...${RESET}"
         i=$(( (i + 1) % ${#spinner[@]} ))
         sleep 0.12
     done
@@ -120,6 +121,85 @@ download_with_animation() {
     local status=$?
     printf "\r\033[K"
     return "$status"
+}
+
+# Run the Andronix Kali CLI installer while displaying only its real download percentage.
+# The installer output is captured so package/mirror logs do not flood the terminal.
+run_kali_installer_with_progress() {
+    local installer="$1"
+    local log_file
+    local installer_pid
+    local percent
+    local last_percent=""
+    local status
+
+    log_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-install.XXXXXX")"
+    if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
+        echo -e "${RED}[✗] Could not create installation log${RESET}"
+        return 1
+    fi
+
+    printf "\n${WHITE}  Installing Kali Linux CLI${RESET}\n\n"
+
+    bash "$installer" >"$log_file" 2>&1 &
+    installer_pid=$!
+
+    while kill -0 "$installer_pid" 2>/dev/null; do
+        percent=$(tail -c 8192 "$log_file" 2>/dev/null | grep -oE '[0-9]{1,3}%' | tail -1 | tr -d '%')
+
+        if [[ "$percent" =~ ^[0-9]{1,3}$ ]] && [ "$percent" -le 100 ]; then
+            last_percent="$percent"
+        fi
+
+        if [ -n "$last_percent" ]; then
+            render_progress_bar "$last_percent" "Downloading / installing"
+        else
+            render_progress_bar "--" "Preparing Kali Linux"
+        fi
+
+        sleep 0.25
+    done
+
+    wait "$installer_pid"
+    status=$?
+
+    percent=$(tail -c 8192 "$log_file" 2>/dev/null | grep -oE '[0-9]{1,3}%' | tail -1 | tr -d '%')
+    if [[ "$percent" =~ ^[0-9]{1,3}$ ]] && [ "$percent" -le 100 ]; then
+        last_percent="$percent"
+    fi
+
+    if [ "$status" -eq 0 ]; then
+        render_progress_bar "100" "Kali Linux installation"
+        printf "\n${GREEN}[✓] Kali Linux CLI installed successfully${RESET}\n"
+    else
+        printf "\r\033[K"
+        echo -e "${RED}[✗] Kali Linux CLI installation failed.${RESET}"
+        echo -e "${YELLOW}Last installer output:${RESET}"
+        tail -n 20 "$log_file"
+    fi
+
+    rm -f "$log_file"
+    return "$status"
+}
+
+# Render one compact progress line. Percentages come from the real installer output.
+render_progress_bar() {
+    local value="$1"
+    local label="$2"
+    local width=28
+    local filled=0
+    local empty=28
+
+    if [[ "$value" =~ ^[0-9]+$ ]]; then
+        filled=$(( value * width / 100 ))
+        empty=$(( width - filled ))
+    fi
+
+    printf "\r\033[K  ${CYAN}[%s${WHITE}%s${CYAN}]${RESET} ${WHITE}%3s%%${RESET}  ${PURPLE}%s${RESET}" \
+        "$(printf '█%.0s' $(seq 1 "$filled") 2>/dev/null)" \
+        "$(printf '░%.0s' $(seq 1 "$empty") 2>/dev/null)" \
+        "$value" \
+        "$label"
 }
 
 check_dependencies() {
@@ -171,17 +251,9 @@ install_kali() {
     if [ -f "start-kali.sh" ]; then
         echo -e "${GREEN}[✓] Existing Kali installation detected${RESET}"
     else
-        progress_spinner "Preparing Kali Linux CLI environment"
-        bash kali.sh &> /dev/null
-        local install_status=$?
-        stop_spinner
-
-        if [ "$install_status" -ne 0 ] || [ ! -f "start-kali.sh" ]; then
-            echo -e "${RED}[✗] Kali Linux CLI installation failed.${RESET}"
+        if ! run_kali_installer_with_progress "kali.sh"; then
             exit 1
         fi
-
-        echo -e "${GREEN}[✓] Kali Linux CLI installed successfully${RESET}"
     fi
 
     cat > kali-help.txt << 'EOL'
