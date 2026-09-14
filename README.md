@@ -21,6 +21,8 @@
 - 🔒 Rootfs archive validation before extraction
 - 🔁 Safe re-runs without unnecessary reinstallation
 - 📝 Persistent installation logs
+- 🩺 Built-in diagnostics with `--doctor`
+- 🛠️ Built-in APT/dpkg repair with `--repair`
 - 💻 PRoot-based Kali environment without Android root
 - 🖥️ Optional Kali Xfce desktop
 - 🐯 TigerVNC desktop server
@@ -67,6 +69,13 @@ bash termo-kali.sh
 
 > Do not use `sh termo-kali.sh`; the installer uses Bash-specific features.
 
+### Check the installation
+
+```bash
+./termo-kali.sh --status
+./termo-kali.sh --doctor
+```
+
 ---
 
 ## ▶️ Start Kali
@@ -81,6 +90,7 @@ Verify Kali from inside the environment:
 
 ```bash
 cat /etc/os-release
+termokali-info
 ```
 
 Exit with:
@@ -91,19 +101,58 @@ exit
 
 ---
 
+## 🩺 Diagnostics and Repair
+
+If Kali starts but a package operation fails, first run:
+
+```bash
+./termo-kali.sh --doctor
+```
+
+For an interrupted `dpkg`/APT state:
+
+```bash
+./termo-kali.sh --repair
+```
+
+The repair command also bootstraps the `debconf` package when `/usr/share/debconf/frontend` is missing.
+
+Inside Kali, the equivalent helper is:
+
+```bash
+termokali-repair
+```
+
+The installer log is stored at:
+
+```text
+~/.termo-kali/install.log
+```
+
+For normal Kali upgrades, use the current Kali workflow:
+
+```bash
+apt update
+apt full-upgrade -y
+```
+
+---
+
 ## 🖥️ Kali Xfce Desktop
 
-Termo-Kali includes a separate desktop manager using the same practical **PRoot + Xfce + VNC** model used by established Android Linux projects. The implementation is kept separate from the base installer so a CLI-only installation does not have to download the full graphical stack.
+Termo-Kali includes a separate desktop manager using the practical **PRoot + Xfce + VNC** model. The implementation is kept separate from the base installer so a CLI-only installation does not have to download the full graphical stack.
 
 ### 1. Install Xfce + TigerVNC
 
 Run this **from Termux**, outside the Kali shell:
 
 ```bash
-cd ~/Termokali
+cd ~/termokali
 chmod +x termo-kali-desktop.sh
 ./termo-kali-desktop.sh install
 ```
+
+If your clone is stored in a different directory, `cd` into that directory instead. Android/Termux paths are case-sensitive.
 
 It installs:
 
@@ -111,6 +160,8 @@ It installs:
 - `tigervnc-standalone-server`
 - `dbus-x11`
 - `xauth`
+
+The desktop installer repairs a missing `debconf` frontend before installing the desktop packages.
 
 ### 2. Set a VNC password
 
@@ -144,6 +195,12 @@ Open your Android VNC client and connect to:
 
 > Do not use `systemctl` for this setup. Kali is running inside PRoot on Android rather than as a normal booted system with systemd.
 
+### ⚠️ Kali 2026.x ARM64/Xfce note
+
+There is an open upstream Kali issue affecting some **NetHunter Rootless/PRoot + ARM64 + Xfce 4.20** installations. Symptoms can include VNC connecting successfully and then the Xfce session exiting after a few seconds because of `gdk-pixbuf`/Glycin and sandbox compatibility problems.
+
+This is an upstream compatibility issue, not a Termo-Kali installer failure. Termo-Kali therefore reports the condition rather than applying an unverified workaround that could damage the desktop environment.
+
 ---
 
 ## 🔧 Installation Flow
@@ -158,6 +215,8 @@ Termux
   ├── Download Kali rootfs
   ├── Validate archive
   ├── Extract rootfs
+  ├── Configure Kali APT sources
+  ├── Create repair/info helpers
   └── Create start-kali.sh
            │
            ▼
@@ -181,6 +240,50 @@ Generated files:
 
 ## 🛠️ Troubleshooting
 
+### `/usr/bin/env: No such file or directory`
+
+Older Termo-Kali launchers used `/usr/bin/env` inside the PRoot rootfs. The current launcher does **not** depend on `/usr/bin/env` and sets the environment directly before starting `/bin/bash`.
+
+Update the repository and regenerate the launcher:
+
+```bash
+cd ~/termokali
+git pull --ff-only
+chmod +x termo-kali.sh
+./termo-kali.sh --repair
+```
+
+Then start Kali again:
+
+```bash
+~/start-kali.sh
+```
+
+### `/usr/share/debconf/frontend: not found`
+
+Run the repair command from Termux:
+
+```bash
+./termo-kali.sh --repair
+```
+
+Or from inside Kali:
+
+```bash
+termokali-repair
+```
+
+The repair process bootstraps `debconf`, configures pending packages, fixes dependencies, and refreshes the package lists.
+
+### APT upgrade errors
+
+Kali recommends `apt full-upgrade`, not plain `apt upgrade`, for rolling-release dependency changes:
+
+```bash
+apt update
+apt full-upgrade -y
+```
+
 ### Check the installer log
 
 ```bash
@@ -191,35 +294,6 @@ cat ~/.termo-kali/install.log
 
 ```bash
 df -h "$HOME"
-```
-
-### Repair interrupted Kali packages
-
-Run these **inside Kali**:
-
-```bash
-dpkg --configure -a
-apt-get -f install -y
-apt-get update
-```
-
-If the error says:
-
-```text
-/usr/share/debconf/frontend: not found
-```
-
-repair `debconf` before installing the desktop:
-
-```bash
-apt-get install --reinstall debconf -y
-```
-
-Then:
-
-```bash
-dpkg --configure -a
-apt-get -f install -y
 ```
 
 ### Permission denied
@@ -238,9 +312,9 @@ rm -f ~/.termo-kali/lock
 
 ---
 
-## 🔁 Re-run
+## 🔁 Re-run / Update
 
-The base installer is safe to run again:
+The base installer is safe to run again. If Kali is already installed, it preserves the existing rootfs and refreshes its launcher, helpers and APT source configuration:
 
 ```bash
 ./termo-kali.sh
@@ -250,6 +324,14 @@ Desktop management is separate:
 
 ```bash
 ./termo-kali-desktop.sh status
+```
+
+To update Termo-Kali itself:
+
+```bash
+git pull --ff-only
+./termo-kali.sh --doctor
+./termo-kali.sh --repair
 ```
 
 ---
