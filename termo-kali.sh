@@ -14,36 +14,47 @@ PURPLE='\033[1;35m'
 WHITE='\033[1;37m'
 RESET='\033[0m'
 
-# Function to display banner
-# Uses the original banner on wide terminals and a compact version on narrow screens.
+# Get current terminal width without adding a dependency.
+get_terminal_width() {
+    local width
+    width=$(stty size 2>/dev/null | awk '{print $2}')
+    width=${width:-${COLUMNS:-80}}
+    [[ "$width" =~ ^[0-9]+$ ]] || width=80
+    echo "$width"
+}
+
+# Function to display a modern responsive banner
+# The layout automatically switches to a compact version on narrow terminals.
 display_banner() {
     clear
     local width
-    width=$(tput cols 2>/dev/null || echo 80)
+    width=$(get_terminal_width)
 
-    echo -e " "
-
-    if [ "$width" -ge 90 ]; then
-        echo -e " ${RED}              ████████╗███████╗██████╗ ███╗   ███╗ ██████╗       ██╗  ██╗ █████╗ ██╗     ██╗"
-        echo -e " ${RED}              ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗      ██║ ██╔╝██╔══██╗██║     ██║"
-        echo -e " ${RED}                 ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║█████╗█████╔╝ ███████║██║     ██║"
-        echo -e " ${RED}                 ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║╚════╝██╔═██╗ ██╔══██║██║     ██║"
-        echo -e " ${RED}                 ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝      ██║  ██╗██║  ██║███████╗██║"
-        echo -e " ${RED}                 ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝"
-        echo -e " "
-        echo -e "${YELLOW}               ╔══════════════════════════════════════════════════════════╗"
-        echo -e "${YELLOW}               ║  ${WHITE}Advanced Kali Linux Installation for Termux Environment${YELLOW}  ║"
-        echo -e "${YELLOW}               ╚══════════════════════════════════════════════════════════╝"
+    if [ "$width" -ge 64 ]; then
+        echo -e ""
+        echo -e "${CYAN}╭──────────────────────────────────────────────────────────────╮${RESET}"
+        echo -e "${CYAN}│${RESET}                                                              ${CYAN}│${RESET}"
+        printf "${CYAN}│${RESET}                 ${WHITE}⚡ TERMO-${CYAN}KALI${RESET}                         ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}          ${WHITE}KALI LINUX • TERMUX • ANDROID${RESET}                ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}                  ${BLUE}◈ PROOT  •  NO ROOT${RESET}                   ${CYAN}│${RESET}\n"
+        echo -e "${CYAN}│${RESET}                                                              ${CYAN}│${RESET}"
+        echo -e "${CYAN}╰──────────────────────────────────────────────────────────────╯${RESET}"
+    elif [ "$width" -ge 42 ]; then
+        echo -e ""
+        echo -e "${CYAN}╭──────────────────────────────────────╮${RESET}"
+        printf "${CYAN}│${RESET}          ${WHITE}⚡ TERMO-${CYAN}KALI${RESET}          ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}     ${WHITE}KALI • TERMUX • ANDROID${RESET}      ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}          ${BLUE}◈ NO ROOT${RESET}              ${CYAN}│${RESET}\n"
+        echo -e "${CYAN}╰──────────────────────────────────────╯${RESET}"
     else
-        echo -e "${RED}╔══════════════════════════════════════╗${RESET}"
-        echo -e "${RED}║${WHITE}              TERMO-KALI              ${RED}║${RESET}"
-        echo -e "${RED}╠══════════════════════════════════════╣${RESET}"
-        echo -e "${RED}║${WHITE}   Kali Linux • Termux • Android      ${RED}║${RESET}"
-        echo -e "${RED}║${WHITE}          No Root Required            ${RED}║${RESET}"
-        echo -e "${RED}╚══════════════════════════════════════╝${RESET}"
+        echo -e ""
+        echo -e "${CYAN}╭────────────────────────────╮${RESET}"
+        printf "${CYAN}│${RESET}       ${WHITE}⚡ TERMO-KALI${RESET}       ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}       ${BLUE}KALI • TERMUX${RESET}       ${CYAN}│${RESET}\n"
+        printf "${CYAN}│${RESET}         ${BLUE}NO ROOT${RESET}           ${CYAN}│${RESET}\n"
+        echo -e "${CYAN}╰────────────────────────────╯${RESET}"
     fi
-
-    echo -e " "
+    echo -e ""
 }
 
 # Function to display spinning progress indicator
@@ -85,6 +96,29 @@ progress_bar() {
     echo -ne "| ${GREEN}Complete!${RESET}\n"
 }
 
+# Animated download indicator without a percentage.
+# The animation runs while wget performs the real download in the background.
+download_with_animation() {
+    local url="$1"
+    local output="$2"
+    local frames=('▰▱▱▱▱▱▱▱' '▰▰▱▱▱▱▱▱' '▰▰▰▱▱▱▱▱' '▰▰▰▰▱▱▱▱' '▰▰▰▰▰▱▱▱' '▰▰▰▰▰▰▱▱' '▰▰▰▰▰▰▰▱' '▰▰▰▰▰▰▰▰' '▱▰▰▰▰▰▰▰' '▱▱▰▰▰▰▰▰' '▱▱▱▰▰▰▰▰' '▱▱▱▱▰▰▰▰')
+    local i=0
+
+    wget "$url" -O "$output" -q &
+    local download_pid=$!
+
+    while kill -0 "$download_pid" 2>/dev/null; do
+        printf "\r${CYAN}[${frames[$i]}]${RESET} ${WHITE}Downloading Kali setup...${RESET}"
+        i=$(( (i + 1) % ${#frames[@]} ))
+        sleep 0.12
+    done
+
+    wait "$download_pid"
+    local status=$?
+    printf "\r\033[K"
+    return "$status"
+}
+
 # Function to check dependencies
 check_dependencies() {
     progress_spinner "Checking system dependencies"
@@ -116,18 +150,18 @@ check_dependencies() {
 install_kali() {
     echo -e "\n${YELLOW}[*] Installing Kali Linux environment...${RESET}\n"
     
-    # Native wget progress provides animated download feedback and an actual percentage bar.
-    echo -e "${PURPLE}[↓] Downloading Kali setup script...${RESET}"
-    wget --progress=bar:force:noscroll https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh -O kali.sh
-    local download_status=$?
-    echo
-    
-    if [ $download_status -ne 0 ] || [ ! -f "kali.sh" ]; then
+    echo -e "${CYAN}[*] Downloading Kali setup script${RESET}"
+    if ! download_with_animation "https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh" "kali.sh"; then
         echo -e "${RED}[✗] Failed to download Kali setup script. Check your internet connection.${RESET}"
         exit 1
     fi
     
-    echo -e "${GREEN}[✓] Downloaded Kali setup script (100%)${RESET}"
+    if [ ! -f "kali.sh" ]; then
+        echo -e "${RED}[✗] Failed to download Kali setup script. Check your internet connection.${RESET}"
+        exit 1
+    fi
+    
+    echo -e "${GREEN}[✓] Downloaded Kali setup script${RESET}"
     
     progress_spinner "Setting up Kali Linux environment"
     bash kali.sh &> /dev/null
