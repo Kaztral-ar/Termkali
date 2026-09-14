@@ -15,19 +15,34 @@ WHITE='\033[1;37m'
 RESET='\033[0m'
 
 # Function to display banner
+# Uses the original banner on wide terminals and a compact version on narrow screens.
 display_banner() {
     clear
+    local width
+    width=$(tput cols 2>/dev/null || echo 80)
+
     echo -e " "
-    echo -e " ${RED}              ████████╗███████╗██████╗ ███╗   ███╗ ██████╗       ██╗  ██╗ █████╗ ██╗     ██╗"
-    echo -e " ${RED}              ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗      ██║ ██╔╝██╔══██╗██║     ██║"
-    echo -e " ${RED}                 ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║█████╗█████╔╝ ███████║██║     ██║"
-    echo -e " ${RED}                 ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║╚════╝██╔═██╗ ██╔══██║██║     ██║"
-    echo -e " ${RED}                 ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝      ██║  ██╗██║  ██║███████╗██║"
-    echo -e " ${RED}                 ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝"
-    echo -e " "
-    echo -e "${YELLOW}               ╔══════════════════════════════════════════════════════════╗"
-    echo -e "${YELLOW}               ║  ${WHITE}Advanced Kali Linux Installation for Termux Environment${YELLOW}  ║"
-    echo -e "${YELLOW}               ╚══════════════════════════════════════════════════════════╝"
+
+    if [ "$width" -ge 90 ]; then
+        echo -e " ${RED}              ████████╗███████╗██████╗ ███╗   ███╗ ██████╗       ██╗  ██╗ █████╗ ██╗     ██╗"
+        echo -e " ${RED}              ╚══██╔══╝██╔════╝██╔══██╗████╗ ████║██╔═══██╗      ██║ ██╔╝██╔══██╗██║     ██║"
+        echo -e " ${RED}                 ██║   █████╗  ██████╔╝██╔████╔██║██║   ██║█████╗█████╔╝ ███████║██║     ██║"
+        echo -e " ${RED}                 ██║   ██╔══╝  ██╔══██╗██║╚██╔╝██║██║   ██║╚════╝██╔═██╗ ██╔══██║██║     ██║"
+        echo -e " ${RED}                 ██║   ███████╗██║  ██║██║ ╚═╝ ██║╚██████╔╝      ██║  ██╗██║  ██║███████╗██║"
+        echo -e " ${RED}                 ╚═╝   ╚══════╝╚═╝  ╚═╝╚═╝     ╚═╝ ╚═════╝       ╚═╝  ╚═╝╚═╝  ╚═╝╚══════╝╚═╝"
+        echo -e " "
+        echo -e "${YELLOW}               ╔══════════════════════════════════════════════════════════╗"
+        echo -e "${YELLOW}               ║  ${WHITE}Advanced Kali Linux Installation for Termux Environment${YELLOW}  ║"
+        echo -e "${YELLOW}               ╚══════════════════════════════════════════════════════════╝"
+    else
+        echo -e "${RED}╔══════════════════════════════════════╗${RESET}"
+        echo -e "${RED}║${WHITE}              TERMO-KALI              ${RED}║${RESET}"
+        echo -e "${RED}╠══════════════════════════════════════╣${RESET}"
+        echo -e "${RED}║${WHITE}   Kali Linux • Termux • Android      ${RED}║${RESET}"
+        echo -e "${RED}║${WHITE}          No Root Required            ${RED}║${RESET}"
+        echo -e "${RED}╚══════════════════════════════════════╝${RESET}"
+    fi
+
     echo -e " "
 }
 
@@ -101,16 +116,18 @@ check_dependencies() {
 install_kali() {
     echo -e "\n${YELLOW}[*] Installing Kali Linux environment...${RESET}\n"
     
-    progress_spinner "Downloading Kali setup script"
-    wget https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh -q
-    stop_spinner
+    # Native wget progress provides animated download feedback and an actual percentage bar.
+    echo -e "${PURPLE}[↓] Downloading Kali setup script...${RESET}"
+    wget --progress=bar:force:noscroll https://raw.githubusercontent.com/EXALAB/AnLinux-Resources/master/Scripts/Installer/Kali/kali.sh -O kali.sh
+    local download_status=$?
+    echo
     
-    if [ ! -f "kali.sh" ]; then
+    if [ $download_status -ne 0 ] || [ ! -f "kali.sh" ]; then
         echo -e "${RED}[✗] Failed to download Kali setup script. Check your internet connection.${RESET}"
         exit 1
     fi
     
-    echo -e "${GREEN}[✓] Downloaded Kali setup script${RESET}"
+    echo -e "${GREEN}[✓] Downloaded Kali setup script (100%)${RESET}"
     
     progress_spinner "Setting up Kali Linux environment"
     bash kali.sh &> /dev/null
