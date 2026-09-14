@@ -368,26 +368,40 @@ show_help_menu() {
         echo -e "${GREEN}║${CYAN}  3)${WHITE} Help Documentation                     ${GREEN}║${RESET}"
         echo -e "${GREEN}║${CYAN}  4)${WHITE} Back                                  ${GREEN}║${RESET}"
         echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
+
         read -r -p "Select an option [1-4]: " help_choice
         case "$help_choice" in
             1)
-                echo -e "\n${YELLOW}[*] Reinstalling Kali Linux CLI...${RESET}"
+                clear
+                display_banner
+                echo -e "${YELLOW}[*] Reinstalling Kali Linux CLI...${RESET}"
                 rm -f start-kali.sh
                 install_kali
                 cleanup
                 echo -e "${GREEN}[✓] Reinstallation completed${RESET}"
                 read -r -p "Press Enter to continue..."
                 ;;
-            2) update_termokali ;;
+            2)
+                update_termokali
+                ;;
             3)
                 clear
                 display_banner
-                if [ -f "kali-help.txt" ]; then cat kali-help.txt; else echo -e "${YELLOW}[•] Help documentation is not available yet.${RESET}"; fi
+                if [ -f "kali-help.txt" ]; then
+                    cat kali-help.txt
+                else
+                    echo -e "${YELLOW}[•] Help documentation is not available yet.${RESET}"
+                fi
                 echo
                 read -r -p "Press Enter to return..."
                 ;;
-            4) return ;;
-            *) echo -e "${RED}[✗] Invalid option. Please select 1-4.${RESET}"; sleep 1 ;;
+            4)
+                return
+                ;;
+            *)
+                echo -e "${RED}[✗] Invalid option. Please select 1-4.${RESET}"
+                sleep 1
+                ;;
         esac
     done
 }
@@ -403,6 +417,7 @@ show_main_menu() {
         echo -e "${GREEN}║${CYAN}  2)${WHITE} Desktop Environment                     ${GREEN}║${RESET}"
         echo -e "${GREEN}║${CYAN}  3)${WHITE} Help                                  ${GREEN}║${RESET}"
         echo -e "${GREEN}╚══════════════════════════════════════════════╝${RESET}\n"
+
         read -r -p "Select an option [1-3]: " choice
         case "$choice" in
             1)
@@ -411,32 +426,45 @@ show_main_menu() {
                 echo -e "${GREEN}[*] Starting Kali Linux...${RESET}\n"
                 ./start-kali.sh
                 ;;
-            2) launch_desktop_environment ;;
-            3) show_help_menu ;;
-            *) echo -e "${RED}[✗] Invalid option. Please select 1-3.${RESET}"; sleep 1 ;;
+            2)
+                launch_desktop_environment
+                ;;
+            3)
+                show_help_menu
+                ;;
+            *)
+                echo -e "${RED}[✗] Invalid option. Please select 1-3.${RESET}"
+                sleep 1
+                ;;
         esac
     done
 }
 
 main() {
+    clear
     display_banner
     sleep 2
+
     if [ ! -d "/data/data/com.termux" ]; then
         echo -e "${RED}[✗] This script must be run in Termux environment.${RESET}"
         exit 1
     fi
+
     echo -e "${GREEN}[✓] Checking required files${RESET}"
     if [ -f "start-kali.sh" ]; then
         echo -e "${GREEN}[✓] Existing Kali launcher found${RESET}"
     else
         echo -e "${YELLOW}[•] Kali launcher not found; setup will continue${RESET}"
     fi
+
     echo -e "${GREEN}[✓] Checking environment${RESET}"
     echo -e "${YELLOW}[*] Starting installation process...${RESET}"
     sleep 1
+
     check_dependencies
     install_kali
     cleanup
+
     show_main_menu
 }
 
