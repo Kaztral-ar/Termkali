@@ -292,6 +292,11 @@ run_desktop_installer_with_progress() {
     local frame
     local label="Preparing XFCE"
     local first_frame=1
+    local last_log_size=0
+    local last_fs_size=0
+    local stall_ticks=0
+    local stall_limit=10000
+    local installer_stalled=0
 
     log_file="$(mktemp "${TMPDIR:-/tmp}/termo-kali-desktop.XXXXXX")"
     if [ -z "$log_file" ] || [ ! -f "$log_file" ]; then
@@ -311,6 +316,33 @@ run_desktop_installer_with_progress() {
     while kill -0 "$installer_pid" 2>/dev/null; do
         local recent_output
         recent_output=$(tail -c 16384 "$log_file" 2>/dev/null | tr '\r' '\n')
+
+        local log_size
+        local fs_size
+        log_size=$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')
+        fs_size=0
+        if [ -d "kali-fs" ]; then
+            fs_size=$(du -sk "kali-fs" 2>/dev/null | awk '{print $1}')
+            fs_size=${fs_size:-0}
+        fi
+        if [ "$log_size" -gt "$last_log_size" ] || [ "$fs_size" -gt "$last_fs_size" ]; then
+            stall_ticks=0
+            last_log_size="$log_size"
+            last_fs_size="$fs_size"
+        else
+            stall_ticks=$((stall_ticks + 1))
+        fi
+
+        if [ "$stall_ticks" -ge "$stall_limit" ]; then
+            installer_stalled=1
+            label="Installer stalled"
+            printf "\033[2K\r${RED}[✗] No installer activity detected for 20 minutes.${RESET}\n"
+            printf "${YELLOW}The XFCE installation appears to be stuck. Check your internet connection and storage, then run Desktop Environment again.${RESET}\n"
+            kill "$installer_pid" 2>/dev/null
+            sleep 1
+            pkill -TERM -P "$installer_pid" 2>/dev/null || true
+            break
+        fi
 
         if printf '%s' "$recent_output" | grep -qiE 'apt|install.*xfce|xfce4|xfce'; then
             label="Installing XFCE"
@@ -351,8 +383,11 @@ run_desktop_installer_with_progress() {
         sleep 0.12
     done
 
-    wait "$installer_pid"
+    wait "$installer_pid" 2>/dev/null
     status=$?
+    if [ "$installer_stalled" -eq 1 ]; then
+        status=124
+    fi
 
     # Remove the two live animation lines before printing the final result once.
     printf "\033[2K\r"
