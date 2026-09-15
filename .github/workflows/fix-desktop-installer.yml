@@ -1,0 +1,44 @@
+name: Fix desktop installer
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    if: ${{ !contains(github.event.head_commit.message, 'Fix desktop installer stall detection') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch desktop installer
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path('termo-kali.sh')
+          s = p.read_text()
+          old = '''    local label="Preparing XFCE"\n    local first_frame=1\n'''
+          new = '''    local label="Preparing XFCE"\n    local first_frame=1\n    local last_log_size=0\n    local last_fs_size=0\n    local stall_ticks=0\n    local stall_limit=10000\n    local installer_stalled=0\n'''
+          if old not in s:
+              raise SystemExit('target variables not found')
+          s = s.replace(old, new, 1)
+          old = '''        local recent_output\n        recent_output=$(tail -c 16384 "$log_file" 2>/dev/null | tr '\\r' '\\n')\n\n        if printf '%s' "$recent_output" | grep -qiE 'apt|install.*xfce|xfce4|xfce'; then\n'''
+          new = '''        local recent_output\n        recent_output=$(tail -c 16384 "$log_file" 2>/dev/null | tr '\\r' '\\n')\n\n        local log_size\n        local fs_size\n        log_size=$(wc -c < "$log_file" 2>/dev/null | tr -d ' ')\n        fs_size=0\n        if [ -d "kali-fs" ]; then\n            fs_size=$(du -sk "kali-fs" 2>/dev/null | awk '{print $1}')\n            fs_size=${fs_size:-0}\n        fi\n        if [ "$log_size" -gt "$last_log_size" ] || [ "$fs_size" -gt "$last_fs_size" ]; then\n            stall_ticks=0\n            last_log_size="$log_size"\n            last_fs_size="$fs_size"\n        else\n            stall_ticks=$((stall_ticks + 1))\n        fi\n\n        if [ "$stall_ticks" -ge "$stall_limit" ]; then\n            installer_stalled=1\n            label="Installer stalled"\n            printf "\\033[2K\\r${RED}[✗] No installer activity detected for 20 minutes.${RESET}\\n"\n            printf "${YELLOW}The XFCE installation appears to be stuck. Check your internet connection and storage, then run Desktop Environment again.${RESET}\\n"\n            kill "$installer_pid" 2>/dev/null\n            sleep 1\n            pkill -TERM -P "$installer_pid" 2>/dev/null || true\n            break\n        fi\n\n        if printf '%s' "$recent_output" | grep -qiE 'apt|install.*xfce|xfce4|xfce'; then\n'''
+          if old not in s:
+              raise SystemExit('target loop block not found')
+          s = s.replace(old, new, 1)
+          old = '''    wait "$installer_pid"\n    status=$?\n\n    # Remove the two live animation lines before printing the final result once.\n'''
+          new = '''    wait "$installer_pid" 2>/dev/null\n    status=$?\n    if [ "$installer_stalled" -eq 1 ]; then\n        status=124\n    fi\n\n    # Remove the two live animation lines before printing the final result once.\n'''
+          if old not in s:
+              raise SystemExit('target wait block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
+      - name: Commit fix and remove temporary workflow
+        run: |
+          rm -f .github/workflows/fix-desktop-installer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add termo-kali.sh .github/workflows/fix-desktop-installer.yml
+          git commit -m "Fix desktop installer stall detection"
+          git push
